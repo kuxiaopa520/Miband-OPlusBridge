@@ -187,7 +187,7 @@ public final class HealthQueueProvider extends ContentProvider {
                 String hash = HealthRecordStore.hashAccount(extras.getString("account"));
                 if (!hash.equals(store.confirmedAccountHash())) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
                 String phase = extras.getString("phase", "");
-                if (!java.util.Set.of("SLEEP", "POINTS", "STEPS", "SPORT", "DONE", "WAIT_DEVICE", "ERROR").contains(phase)) {
+                if (!java.util.Set.of("SLEEP", "POINTS", "STEPS", "SPORT", "CLEANUP", "RETRY", "DONE", "WAIT_DEVICE", "ERROR").contains(phase)) {
                     throw new IllegalArgumentException("INVALID_HEALTH_PROGRESS");
                 }
                 var progress = io.github.miam1ku.mibandoplusbridge.data.LocalPrefs.open(getContext(), "health-import-progress");
@@ -202,10 +202,12 @@ public final class HealthQueueProvider extends ContentProvider {
                 getContext().getContentResolver().notifyChange(PROGRESS_URI, null);
                 return status("HEALTH_PROGRESS_SAVED");
             }
+            case "historyVersion":
             case "sleepVersion": {
                 if (self || extras == null) throw new SecurityException("OHEALTH_CALLER_REQUIRED");
                 Bundle result = status("HEALTH_HISTORY_VERSION");
-                result.putString("version", store.sleepVersion(extras.getString("account"), extras.getString("deviceId")));
+                result.putString("version", store.historyVersion(extras.getString("account"), extras.getString("deviceId"),
+                        "sleepVersion".equals(method) ? "sleep" : extras.getString("family", "")));
                 return result;
             }
             case "ackBatch": {

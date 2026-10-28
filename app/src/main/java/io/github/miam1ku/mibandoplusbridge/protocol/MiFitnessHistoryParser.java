@@ -14,7 +14,7 @@ import org.json.JSONObject;
 
 /** Mi Fitness 3.59.1 normalized Room rows. Times in this database are epoch seconds. */
 public final class MiFitnessHistoryParser {
-    public static final List<String> TABLES = List.of("sleep_segment", "step_record", "hr_record", "spo2_record", "stress_record");
+    public static final List<String> TABLES = List.of("sleep_segment", "step_record", "hr_record", "spo2_record", "stress_record", "sport_report");
     private final BandHistoryParser records;
 
     public MiFitnessHistoryParser(String firmware, String deviceId, String did) {
@@ -76,6 +76,37 @@ public final class MiFitnessHistoryParser {
             result.add(0, records.measurement("sleep_interval", start, end, null, zone, "sleep",
                     complete && !json.optBoolean("is_uncomplete", false), null, null, null));
             return result;
+        }
+        if ("sport_report".equals(table)) {
+            int mode = switch (json.getInt("sport_type")) {
+                case 1 -> 2;
+                case 2, 207 -> 1;
+                case 3 -> 10;
+                case 4 -> 36;
+                case 5 -> 37;
+                case 6 -> 3;
+                case 8 -> 35;
+                case 9 -> 7;
+                case 10 -> 809;
+                case 14 -> 908;
+                case 15 -> 506;
+                case 333 -> 19;
+                default -> throw new IllegalArgumentException("MI_HISTORY_SPORT_TYPE_UNSUPPORTED");
+            };
+            long start = seconds(json.getLong("start_time")), end = seconds(json.getLong("end_time"));
+            if (end <= start || end - start > 48 * 3_600_000L) throw new IllegalArgumentException("MI_HISTORY_SPORT_TIME_INVALID");
+            Integer calories = json.has("total_cal") && !json.isNull("total_cal") ? json.getInt("total_cal")
+                    : json.has("calories") && !json.isNull("calories") ? json.getInt("calories") : null;
+            Integer distance = json.has("distance") && !json.isNull("distance") ? json.getInt("distance") : null;
+            Integer reps = mode != 908 && json.has("steps") && !json.isNull("steps") ? json.getInt("steps") : null;
+            Integer heart = json.has("avg_hrm") && !json.isNull("avg_hrm") ? json.getInt("avg_hrm") : null;
+            if (heart != null && (heart < 1 || heart > 250)) heart = null;
+            Integer duration = json.has("duration") && !json.isNull("duration") ? json.getInt("duration") : null;
+            if (duration != null && duration == 0) duration = null;
+            Measurement summary = records.sportSummary(new SportReportParser.Session(mode, "", start, end,
+                    calories, distance, reps, heart, duration, null), zone);
+            summary.toRecord(1);
+            return List.of(summary);
         }
         long start = seconds(time);
         String kind;

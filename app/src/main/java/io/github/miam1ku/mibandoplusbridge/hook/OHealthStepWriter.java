@@ -58,6 +58,12 @@ final class OHealthStepWriter {
     private Method detailAccount, detailDevice, detailStart, detailEnd, detailSteps, detailCalories;
     private Method detailDistance, detailWorkout, detailMode, detailDisplay, detailType, detailZone;
     private Method detailGetStart, detailGetSteps, detailGetDevice;
+    private String planIdentity, planKey;
+    private List<HealthRecord> planRecords = List.of();
+    private List<BandHistoryParser.StepDay> planDays = List.of();
+    private final java.util.ArrayDeque<BandHistoryParser.StepDay> pendingDays = new java.util.ArrayDeque<>();
+    private final java.util.Map<String, String> dayVersions = new java.util.HashMap<>();
+    private final java.util.Map<String, String> confirmedDays = new java.util.HashMap<>();
 
     OHealthStepWriter(OHealthHealthImportHook.HostContract host) throws ReflectiveOperationException {
         this.host = host;
@@ -82,53 +88,108 @@ final class OHealthStepWriter {
         getMoveAbout = getter(statClass, "getTotalMoveAboutTimes", int.class);
     }
 
-    void write(Context context) throws Exception {
+    boolean write(Context context) throws Exception {
         String account = host.account();
-        if (account == null || account.isBlank()) return;
+        if (account == null || account.isBlank()) return false;
         Object api = host.api();
         if (api == null) throw new IllegalStateException("STEP_IMPORT_NOT_READY");
         Bundle band = OHealthDeviceHook.registeredSnapshot();
-        if (band == null || band.getString("deviceId", "").isBlank()) return;
+        if (band == null || band.getString("deviceId", "").isBlank()) return false;
         String queued = band.getString("deviceId");
         String device = OHealthDeviceHook.healthId(queued);
         String category = deviceCategory(band.getString("modelId", ""));
-        List<HealthRecord> records = history(context, account, queued);
-        List<BandHistoryParser.StepDay> days = new ArrayList<>(BandHistoryParser.preferLiveTotal(
-                BandHistoryParser.stepDays(records), band.getLong("stepsToday", -1),
-                band.getLong("stepsAtMs", 0), java.time.ZoneId.systemDefault()));
-        days.removeIf(day -> day.steps <= 0 && day.calories < 0 && day.moveAbout < 0 && day.distance < 0);
-        if (days.isEmpty()) return;
-        SharedPreferences written = context.getSharedPreferences("oplusband-step-import", Context.MODE_PRIVATE);
+        String identity = account + ":" + queued + ":" + device;
+        var zone = java.time.ZoneId.systemDefault();
+        String key = identity + ":" + OHealthHealthImportHook.historyVersion(context, account, queued, "steps")
+                + ":" + band.getLong("stepsToday", -1) + ":"
+                + java.time.Instant.ofEpochMilli(band.getLong("stepsAtMs", 0)).atZone(zone).toLocalDate() + ":" + zone;
+        if (!key.equals(planKey)) {
+            List<HealthRecord> records = history(context, account, queued);
+            List<BandHistoryParser.StepDay> days = new ArrayList<>(BandHistoryParser.preferLiveTotal(
+                    BandHistoryParser.stepDays(records), band.getLong("stepsToday", -1),
+                    band.getLong("stepsAtMs", 0), zone));
+            days.removeIf(day -> day.steps <= 0 && day.calories < 0 && day.moveAbout < 0 && day.distance < 0);
+            days.sort(java.util.Comparator.comparingInt((BandHistoryParser.StepDay day) -> day.date).reversed());
+            if (!identity.equals(planIdentity)) confirmedDays.clear();
+            var digests = new java.util.HashMap<String, java.security.MessageDigest>();
+            for (HealthRecord record : records) {
+                String date = record.timezone + "|" + java.time.Instant.ofEpochMilli(record.startMs)
+                        .atZone(java.time.ZoneId.of(record.timezone)).toLocalDate().toString().replace("-", "");
+                var digest = digests.get(date);
+                if (digest == null) {
+                    digest = java.security.MessageDigest.getInstance("SHA-256");
+                    digests.put(date, digest);
+                }
+                digest.update((record.recordId + ":" + record.revision + ";").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            pendingDays.clear();
+            dayVersions.clear();
+            for (var day : days) {
+                String date = day.timezone + "|" + day.date;
+                var digest = digests.get(date);
+                String fingerprint = day.steps + ":" + day.calories + ":" + day.distance + ":" + day.moveAbout
+                        + ":" + (digest == null ? "" : java.util.HexFormat.of().formatHex(digest.digest()));
+                dayVersions.put(date, fingerprint);
+                if (!fingerprint.equals(confirmedDays.get(date))) pendingDays.add(day);
+            }
+            planIdentity = identity;
+            planKey = key;
+            planRecords = records;
+            planDays = days;
+        }
+        if (pendingDays.isEmpty()) { planRecords = List.of(); return false; }
+        SharedPreferences written = context.getSharedPreferences("oplusband-step-import-"
+                + io.github.miam1ku.mibandoplusbridge.data.HealthRecordStore.hashAccount(account), Context.MODE_PRIVATE);
         int inserted = 0;
         int skipped = 0;
         int failed = 0;
-        for (BandHistoryParser.StepDay day : days) {
+        int chart = 0;
+        int limit = Math.min(3, pendingDays.size());
+        long turnStarted = android.os.SystemClock.elapsedRealtime();
+        for (int i = 0; i < limit; i++) {
+            if (i > 0 && android.os.SystemClock.elapsedRealtime() - turnStarted >= 3_000) break;
+            if (!account.equals(host.account())) throw new SecurityException("IMPORT_ACCOUNT_CHANGED");
+            var day = pendingDays.removeFirst();
+            boolean dayFailed = false;
             try {
                 if (writeStat(api, account, device, day, written)) inserted++;
                 else skipped++;
-            } catch (Exception failure) {
+            } catch (SecurityException paused) {
+                pendingDays.addFirst(day);
+                throw paused;
+            } catch (Exception | LinkageError failure) {
                 failed++;
+                dayFailed = true;
                 XposedBridge.log("OplusBandBridge OHEALTH_STEP_STAT_FAIL date=" + day.date + " " + failure);
             }
-        }
-        int chart = 0;
-        for (BandHistoryParser.StepDay day : days) {
             try {
-                chart += writeChart(api, account, device, category, day, records, written);
-            } catch (Exception failure) {
+                chart += writeChart(api, account, device, category, day, planRecords, written);
+            } catch (SecurityException paused) {
+                pendingDays.addFirst(day);
+                throw paused;
+            } catch (Exception | LinkageError failure) {
                 failed++;
+                dayFailed = true;
                 XposedBridge.log("OplusBandBridge OHEALTH_STEP_CHART_FAIL date=" + day.date + " " + failure);
+            }
+            if (dayFailed) pendingDays.addLast(day);
+            else {
+                String date = day.timezone + "|" + day.date;
+                confirmedDays.put(date, dayVersions.get(date));
             }
         }
         // Rows left under the queued id stay. A table 1001 delete cannot be scoped to one device:
         // it cleared every minute of the day, this band's new rows and the phone's included.
-        publishToday(context, days);
+        publishToday(context, planDays);
         publishSnapshot(context);
-        String summary = "OHEALTH_STEP_IMPORT days=" + days.size()
-                + " inserted=" + inserted + " skipped=" + skipped + " chart=" + chart + " failed=" + failed;
+        String summary = "OHEALTH_STEP_IMPORT days=" + planDays.size()
+                + " inserted=" + inserted + " skipped=" + skipped + " chart=" + chart + " failed=" + failed
+                + " remaining=" + pendingDays.size();
         HookRuntime.log(summary);
-        XposedBridge.log("OplusBandBridge " + summary);
+        OHealthDeviceHook.traceLine(context, summary);
         if (failed > 0) throw new IllegalStateException("STEP_IMPORT_INCOMPLETE");
+        if (pendingDays.isEmpty()) planRecords = List.of();
+        return !pendingDays.isEmpty();
     }
 
     private boolean writeStat(Object api, String account, String device, BandHistoryParser.StepDay day,

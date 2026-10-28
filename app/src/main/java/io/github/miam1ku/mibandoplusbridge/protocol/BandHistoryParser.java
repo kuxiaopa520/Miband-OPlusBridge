@@ -659,19 +659,23 @@ public final class BandHistoryParser {
                         null, null, null, null, null, null, null, track.payload);
             }
             SportReportParser.Session session = SportReportParser.parse(bytes);
-            String kind = "sport_session";
-            return new Measurement(recordId(kind, session.startMs) + ":continuous", deviceId, kind,
-                    session.startMs, session.endMs, session.mode, null, timezone, "continuous", false,
-                    sourceFingerprint(kind, session.startMs, session.endMs, session.mode, timezone,
-                            "continuous", false, null, session.calories, session.distance, null,
-                            session.reps, session.heart, session.duration, session.bestPace, null),
-                    session.calories, session.distance, null, session.reps, session.heart,
-                    session.duration, session.bestPace, null);
+            return sportSummary(session, timezone);
         } catch (IllegalArgumentException failure) {
             String status = failure.getMessage();
             if (status != null && status.matches("[A-Z][A-Z0-9_]{0,80}")) throw new SemanticException(status);
             throw failure;
         }
+    }
+
+    Measurement sportSummary(SportReportParser.Session session, String timezone) {
+        String kind = "sport_session";
+        return new Measurement(recordId(kind, session.startMs) + ":continuous", deviceId, kind,
+                session.startMs, session.endMs, session.mode, null, timezone, "continuous", false,
+                sourceFingerprint(kind, session.startMs, session.endMs, session.mode, timezone,
+                        "continuous", false, null, session.calories, session.distance, null,
+                        session.reps, session.heart, session.duration, session.bestPace, null),
+                session.calories, session.distance, null, session.reps, session.heart,
+                session.duration, session.bestPace, null);
     }
 
     private static boolean bit(long flags, int bit) { return (flags & 1L << bit) != 0; }
@@ -888,7 +892,7 @@ public final class BandHistoryParser {
             int numeric = date.getYear() * 10_000 + date.getMonthValue() * 100 + date.getDayOfMonth();
             String key = record.timezone + "|" + numeric;
             long[] acc = days.computeIfAbsent(key, unused -> new long[] {numeric, -1, 0, 0,
-                    date.atStartOfDay(zone).toInstant().toEpochMilli(), -1, -1, -1});
+                    date.atStartOfDay(zone).toInstant().toEpochMilli(), -1, -1, -1, -1});
             if (report) {
                 if (acc[1] < value) {
                     acc[1] = value;
@@ -901,6 +905,7 @@ public final class BandHistoryParser {
             } else if (acc[2] <= 200_000L - value) {
                 acc[2] += value;
                 acc[3] = 1;
+                if (record.calories != null) acc[8] = Math.max(0, acc[8]) + record.calories;
                 if (record.distance != null && (acc[7] < 0 || acc[7] <= 1_000_000L - record.distance)) {
                     acc[7] = (acc[7] < 0 ? 0 : acc[7]) + record.distance;
                 }
@@ -913,7 +918,7 @@ public final class BandHistoryParser {
             if (steps < 0 || steps > 200_000L) continue;
             int split = entry.getKey().lastIndexOf('|');
             result.add(new StepDay((int) acc[0], steps, acc[4], entry.getKey().substring(0, split),
-                    acc[5], acc[7], acc[6]));
+                    acc[5] >= 0 ? acc[5] : acc[8], acc[7], acc[6]));
         }
         return result;
     }

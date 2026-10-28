@@ -60,8 +60,11 @@ public final class OHealthHealthImportHook {
     private volatile boolean running;
     private final AtomicBoolean requestedWhileRunning = new AtomicBoolean();
     private long lastPointProgress;
+    private final Map<String, Long> phaseRetries = new LinkedHashMap<>();
     private long retryAfter;
     private boolean stressZerosCleared;
+    private Bundle stressCleanup;
+    private int stressCleanupIndex;
     private String lastFailure;
     private final Runnable work = this::runScheduled;
 
@@ -503,7 +506,12 @@ public final class OHealthHealthImportHook {
 
     private void request() {
         if (running) { requestedWhileRunning.set(true); return; }
-        if (scheduled.compareAndSet(false, true)) worker.post(work);
+        synchronized (scheduled) {
+            retryAfter = 0;
+            worker.removeCallbacks(work);
+            scheduled.set(true);
+            worker.post(work);
+        }
     }
 
     private void runScheduled() {
@@ -515,8 +523,6 @@ public final class OHealthHealthImportHook {
         scheduled.set(false);
         if (running) return;
         running = true;
-        boolean retrySoon = false;
-        Throwable incomplete = null;
         try {
             ensureAccount();
             if (!usableAccount(host.account())) {
@@ -530,40 +536,22 @@ public final class OHealthHealthImportHook {
                 return;
             }
             OHealthDeviceHook.rememberBand(host.loader);
-            if (sleep != null) {
-                try {
-                    reportProgress("SLEEP", "");
-                    sleep.write(context);
-                } catch (SecurityException paused) {
-                    throw paused;
-                } catch (Exception | LinkageError sleepFail) {
-                    retrySoon |= transientImport(sleepFail);
-                    incomplete = sleepFail;
-                    logImportFailure(sleepFail);
-                }
-            }
-            if (!stressZerosCleared) {
-                try {
-                    stressZerosCleared = clearUnmeasuredStress();
-                } catch (SecurityException paused) {
-                    throw paused;
-                } catch (Exception | LinkageError stressFail) {
-                    retrySoon = true;
-                    incomplete = stressFail;
-                    logImportFailure(stressFail);
-                }
-            }
-            reportProgress("POINTS", "");
-            drain();
-            reportProgress("STEPS", "");
-            if (steps != null) steps.write(context);
+            var result = runImportBatch(List.of(
+                    new ImportTask("POINTS", () -> drain() ? 250L : 0L),
+                    new ImportTask("STEPS", () -> steps != null && steps.write(context) ? 250L : 0L),
+                    new ImportTask("SPORT", () -> sports != null && sports.write(context) ? 250L : 0L),
+                    new ImportTask("SLEEP", () -> sleep != null && sleep.write(context) ? 250L : 0L),
+                    new ImportTask("CLEANUP", () -> {
+                        if (!stressZerosCleared) stressZerosCleared = clearUnmeasuredStress();
+                        return stressZerosCleared ? 0L : 2_000L;
+                    })),
+                    phaseRetries, SystemClock.elapsedRealtime(), phase -> reportProgress(phase, ""), this::logImportFailure);
             publishCard();
-            reportProgress("SPORT", "");
-            if (sports != null) sports.write(context);
             OHealthHomeMetricHook.requestReload();
-            if (incomplete != null) {
-                scheduleRetry(retrySoon ? 2_000 : FAILURE_COOLDOWN_MS);
-                logImportFailure(incomplete);
+            if (result.nextDelay() > 0) {
+                scheduleRetry(result.nextDelay());
+                if (result.failure() != null) logImportFailure(result.failure());
+                else if (result.nextDelay() > 1_000) reportProgress("RETRY", "");
             } else {
                 lastFailure = null;
                 reportProgress("DONE", "");
@@ -578,6 +566,45 @@ public final class OHealthHealthImportHook {
         }
     }
 
+    record ImportTask(String phase, java.util.concurrent.Callable<Long> write) {}
+    record ImportResult(long nextDelay, Throwable failure) {}
+
+    /** One bounded turn per metric; a failing historical day cannot hold the other metrics back. */
+    static ImportResult runImportBatch(List<ImportTask> tasks, Map<String, Long> retries, long now,
+            java.util.function.Consumer<String> progress, java.util.function.Consumer<Throwable> errors) throws Exception {
+        long next = Long.MAX_VALUE;
+        Throwable incomplete = null;
+        for (ImportTask task : tasks) {
+            long remaining = retries.getOrDefault(task.phase(), 0L) - now;
+            if (remaining > 0) { next = Math.min(next, remaining); continue; }
+            progress.accept(task.phase());
+            try {
+                long delay = task.write().call();
+                retries.remove(task.phase());
+                if (delay > 0) next = Math.min(next, delay);
+            } catch (SecurityException paused) {
+                throw paused;
+            } catch (Exception | LinkageError failure) {
+                incomplete = failure;
+                errors.accept(failure);
+                long delay = transientImport(failure) ? 2_000 : FAILURE_COOLDOWN_MS;
+                retries.put(task.phase(), now + delay);
+                next = Math.min(next, delay);
+            }
+        }
+        return new ImportResult(next == Long.MAX_VALUE ? 0 : next, incomplete);
+    }
+
+    static String historyVersion(Context context, String account, String device, String family) {
+        Bundle request = new Bundle();
+        request.putString("account", account);
+        request.putString("deviceId", device);
+        request.putString("family", family);
+        Bundle reply = context.getContentResolver().call(HealthQueueProvider.URI, "historyVersion", null, request);
+        if (reply == null || reply.getString("version") == null) throw new IllegalStateException("HISTORY_VERSION_UNAVAILABLE");
+        return reply.getString("version");
+    }
+
     /** A zero continuous sample is an empty minute. Remove any already stored in OHealth. */
     private boolean clearUnmeasuredStress() throws Exception {
         String account = host.account();
@@ -585,7 +612,12 @@ public final class OHealthHealthImportHook {
         if (!usableAccount(account) || api == null) return false;
         Bundle request = new Bundle();
         request.putString("account", account);
-        Bundle gaps = context.getContentResolver().call(HealthQueueProvider.URI, "unmeasuredStress", null, request);
+        if (stressCleanup == null || !account.equals(stressCleanup.getString("account"))) {
+            stressCleanup = context.getContentResolver().call(HealthQueueProvider.URI, "unmeasuredStress", null, request);
+            stressCleanupIndex = 0;
+            if (stressCleanup != null) stressCleanup.putString("account", account);
+        }
+        Bundle gaps = stressCleanup;
         if (gaps == null) throw new IllegalStateException("STRESS_GAP_UNAVAILABLE");
         long[] starts = gaps.getLongArray("starts");
         long[] ends = gaps.getLongArray("ends");
@@ -595,13 +627,17 @@ public final class OHealthHealthImportHook {
             throw new IllegalStateException("STRESS_GAP_UNAVAILABLE");
         }
         int table = OHealthHealthModels.Kind.STRESS.table;
-        for (int i = 0; i < starts.length; i++) {
+        int end = Math.min(starts.length, stressCleanupIndex + 10);
+        for (int i = stressCleanupIndex; i < end; i++) {
             host.deleteRows(api, table, account, OHealthDeviceHook.healthId(devices[i]), starts[i], ends[i]);
+            stressCleanupIndex = i + 1;
         }
+        if (stressCleanupIndex < starts.length) return false;
         if (starts.length > 0) host.syncCloud(api, table);
         Bundle forgotten = context.getContentResolver().call(HealthQueueProvider.URI,
                 "forgetUnmeasuredStress", null, request);
         if (forgotten == null) throw new IllegalStateException("STRESS_GAP_UNAVAILABLE");
+        stressCleanup = null;
         return true;
     }
 
@@ -712,20 +748,22 @@ public final class OHealthHealthImportHook {
         }
     }
 
-    private void drain() throws Exception {
+    private boolean drain() throws Exception {
         if (OHealthDeviceHook.registeredSnapshot() == null) {
             throw new IllegalStateException("SLEEP_DEVICE_NOT_READY");
         }
         ensureHeytapContext();
         String account = host.account();
-        if (account == null || account.isBlank() || account.length() > 512) return;
+        if (account == null || account.isBlank() || account.length() > 512) return false;
         long epoch = accountEpoch.get();
         Object api = host.api();
         if (api == null) throw new IllegalStateException("IMPORT_NOT_READY");
-        while (true) {
+        long turnStarted = SystemClock.elapsedRealtime();
+        for (int pageIndex = 0; pageIndex < 20; pageIndex++) {
+            if (pageIndex > 0 && SystemClock.elapsedRealtime() - turnStarted >= 3_000) break;
             requireAccount(account, epoch);
             List<HealthRecord> page = pending(account);
-            if (page.isEmpty()) return;
+            if (page.isEmpty()) return false;
             Map<Batch, List<HealthRecord>> groups = new LinkedHashMap<>();
             for (HealthRecord record : page) {
                 OHealthHealthModels.Kind kind = OHealthHealthModels.Kind.of(record);
@@ -812,6 +850,7 @@ public final class OHealthHealthImportHook {
             // Confirmed or host-rejected rows are gone. Continue while the page made progress.
             if (acknowledged == 0 && released == 0) throw new IllegalStateException("IMPORT_READBACK_INCOMPLETE");
         }
+        return true;
     }
     /** Rows stored under the bridge id are not visible once the band is addressed by MAC. */
     private void forgetPreviousDevice(Object api, String account, int table, List<HealthRecord> records)
@@ -872,6 +911,9 @@ public final class OHealthHealthImportHook {
     /** Bind whatever real account OHealth already returned, including after a switch or a pause. */
     private void adoptAccount(String account) {
         try {
+            phaseRetries.clear();
+            stressZerosCleared = false;
+            stressCleanup = null;
             Bundle data = new Bundle();
             data.putString("account", account);
             context.getContentResolver().call(HealthQueueProvider.URI, "adoptAccount", null, data);
@@ -1214,7 +1256,7 @@ public final class OHealthHealthImportHook {
         }
 
         private Object awaitRead(Object observable) throws Exception {
-            if (modern) return OHealthObservable.await(loader, observerClass, subscribe, dispose, observable, 60_000);
+            if (modern) return OHealthObservable.await(loader, observerClass, subscribe, dispose, observable, 15_000);
             CountDownLatch done = new CountDownLatch(1);
             AtomicReference<Object> bean = new AtomicReference<>();
             AtomicReference<Object> disposable = new AtomicReference<>();

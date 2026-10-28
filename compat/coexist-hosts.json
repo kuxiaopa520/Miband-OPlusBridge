@@ -236,6 +236,12 @@
         "convert(Lcom/xiaomi/fitness/device/manager/export/bean/WearableDeviceInfo;)Lcom/xiaomi/wearable/core/DeviceInfo;"
       ],
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase": [],
+      "com.xiaomi.fit.fitness.persist.db.internal.SportReportEntity": [
+        "getSid()Ljava/lang/String;", "getKey()Ljava/lang/String;", "getTime()J", "getValue()Ljava/lang/String;"
+      ],
+      "com.xiaomi.fit.data.common.data.sport.SportBasicReport": [
+        "getSportType()I", "getStartTime()J", "getEndTime()J", "getDuration()I"
+      ],
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase$Companion": [
         "getInstance()Lcom/xiaomi/fit/fitness/persist/db/FitnessDatabase;"
       ],

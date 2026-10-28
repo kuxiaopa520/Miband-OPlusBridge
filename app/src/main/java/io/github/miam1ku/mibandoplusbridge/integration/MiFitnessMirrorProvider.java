@@ -153,6 +153,7 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
         String source = new BindingStore(getContext()).read().optString("userId", "");
         if (source.isBlank()) return status("MI_HISTORY_REIMPORT_BINDING");
         LocalPrefs prefs = LocalPrefs.open(getContext(), HISTORY_PREFS);
+        full |= prefs.getInt("parserRevision", 0) < 2;
         boolean sameIdentity = binding.deviceId().equals(prefs.getString("deviceId", ""))
                 && account.equals(prefs.getString("accountHash", ""))
                 && source.equals(prefs.getString("sourceAccount", ""));
@@ -164,6 +165,7 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
             long since = full || !sameIdentity ? -1
                     : Math.max(-1, prefs.getLong("since:" + MiFitnessHistoryParser.TABLES.get(0), -1) - HISTORY_OVERLAP_SECONDS);
             if (!edit.putBoolean("active", true).putString("token", java.util.UUID.randomUUID().toString())
+                    .putInt("parserRevision", 2)
                     .putString("deviceId", binding.deviceId()).putString("accountHash", account)
                     .putString("sourceAccount", source).putInt("table", 0).putLong("time", since).putString("key", "")
                     .putLong("cutoff", System.currentTimeMillis() / 1000).putLong("rows", 0)
@@ -192,13 +194,17 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
         return result;
     }
 
-    private Bundle historyJob(BindingStore.Identity binding) {
+    private Bundle historyJob(BindingStore.Identity binding) throws Exception {
         LocalPrefs prefs = LocalPrefs.open(getContext(), HISTORY_PREFS);
         if (!prefs.getBoolean("active", false)) return historyStatus();
         if (!binding.deviceId().equals(prefs.getString("deviceId", ""))) return status("MI_HISTORY_DEVICE_CHANGED");
         if (!prefs.getString("accountHash", "").equals(historyStore.confirmedAccountHash())) {
             saveHistoryStatus("MI_HISTORY_ACCOUNT_CHANGED");
             return status("MI_HISTORY_ACCOUNT_CHANGED");
+        }
+        if (prefs.getInt("parserRevision", 0) < 2) {
+            startHistory(binding, true);
+            prefs = LocalPrefs.open(getContext(), HISTORY_PREFS);
         }
         Bundle result = historyStatus();
         result.putString("did", binding.did());

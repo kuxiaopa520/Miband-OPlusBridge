@@ -49,7 +49,9 @@
       "com.heytap.sports.record.list.SportRecordListActivity": [],
       "com.heytap.health.bloodoxygen.ui.BloodOxygenHistoryActivity": [],
       "com.heytap.health.stress.ui.StressHistoryActivity": [],
-      "com.heytap.health.linkage.ui.DeviceDetailsPanelActivity": [],
+      "com.heytap.health.linkage.ui.DeviceDetailsActivity": ["u6(Ljava/util/List;)V"],
+      "com.heytap.health.linkage.ui.DeviceDetailsPanelActivity": ["u6(Ljava/util/List;)V", "D6()Z"],
+      "cz.h": [],
       "com.heytap.health.linkage.ui.DeviceDetailsViewModel": [
         "u(Ljava/lang/String;ZZ)Landroidx/lifecycle/MutableLiveData;", "w(ILjava/lang/String;)V"
       ],
@@ -132,7 +134,9 @@
       "com.oplus.mydevices.sdk.device.ConnectState": [
         "CONNECTED:Lcom/oplus/mydevices/sdk/device/ConnectState;", "DISCONNECTED:Lcom/oplus/mydevices/sdk/device/ConnectState;"
       ],
-      "com.oplus.mydevices.sdk.device.BatteryType": ["SINGLE:Lcom/oplus/mydevices/sdk/device/BatteryType;"]
+      "com.oplus.mydevices.sdk.device.BatteryType": ["SINGLE:Lcom/oplus/mydevices/sdk/device/BatteryType;"],
+      "cz.h": ["a:I", "f:I", "i:Ljava/lang/String;", "j:Ljava/lang/String;", "k:Z"],
+      "com.heytap.health.linkage.ui.DeviceDetailsActivity": ["l:Ljava/lang/String;", "t:Ljava/lang/String;"]
     }
   }
 }

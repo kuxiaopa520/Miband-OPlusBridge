@@ -70,6 +70,41 @@ public final class MiFitnessHistoryParserTest {
         assertEquals(Integer.valueOf(88), row.distance);
     }
 
+    @Test public void savedSportSummariesUseTheLiveRecordIdentityAndPreserveTheirMeasuredValues() throws Exception {
+        String json = "{\"sport_type\":1,\"start_time\":1700000000,\"end_time\":1700003600,"
+                + "\"duration\":3000,\"distance\":5200,\"total_cal\":365,\"calories\":330,\"steps\":6000,\"avg_hrm\":122}";
+        var row = parser().parse("sport_report", "1", AT, json, 28800, "Asia/Shanghai", true).get(0);
+        var live = new BandHistoryParser("1.0", row.deviceId, DID).sportSummary(
+                new SportReportParser.Session(2, "", AT * 1000, (AT + 3600) * 1000,
+                        365, 5200, 6000, 122, 3000, null), "Asia/Shanghai");
+        assertEquals("sport_session", row.kind);
+        assertEquals(2, row.value.intValue());
+        assertEquals(live.recordId, row.recordId);
+        assertEquals(live.sourceFingerprint, row.sourceFingerprint);
+        assertEquals(Integer.valueOf(365), row.calories);
+        assertEquals(Integer.valueOf(5200), row.distance);
+        assertEquals(Integer.valueOf(3000), row.duration);
+        assertEquals(Integer.valueOf(122), row.heart);
+        assertThrows(IllegalArgumentException.class, () -> parser().parse("sport_report", "99999", AT,
+                json.replace("\"sport_type\":1", "\"sport_type\":99999"), 0, "UTC", true));
+        assertThrows(IllegalArgumentException.class, () -> parser().parse("sport_report", "1", AT,
+                json.replace("1700003600", "1699999999"), 0, "UTC", true));
+    }
+
+    @Test public void minuteCaloriesReachTheDailyActivityTotalWithoutReplacingAnAuthoritativeDailyReport() throws Exception {
+        var one = parser().parse("step_record", "steps", AT, "{\"steps\":100,\"calories\":2}", 0, "UTC", true).get(0).toRecord(1);
+        var two = parser().parse("step_record", "steps", AT + 60, "{\"steps\":200,\"calories\":3}", 0, "UTC", true).get(0).toRecord(1);
+        var day = BandHistoryParser.stepDays(java.util.List.of(one, two)).get(0);
+        assertEquals(300, day.steps);
+        assertEquals(5, day.calories);
+        assertEquals(-1, day.moveAbout);
+        var report = new io.github.miam1ku.mibandoplusbridge.data.HealthRecord("daily", one.deviceId, "steps_day",
+                AT * 1000, (AT + 86400) * 1000, 600, null, 1, "UTC", "continuous", false, 20, null, null);
+        var authoritative = BandHistoryParser.stepDays(java.util.List.of(one, two, report)).get(0);
+        assertEquals(600, authoritative.steps);
+        assertEquals(20, authoritative.calories);
+    }
+
     @Test public void manualAndRestingHeartValuesKeepTheirOwnModes() throws Exception {
         var continuous = parser().parse("hr_record", "heart_rate", AT, "{\"bpm\":72}", 0, "UTC", true).get(0);
         var manual = parser().parse("hr_record", "single_heart_rate", AT, "{\"bpm\":72}", 0, "UTC", true).get(0);

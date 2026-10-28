@@ -211,4 +211,19 @@ public final class MiFitnessHistoryImportTest {
         }
         assertEquals(-1, start().getLong("time"));
     }
+
+    @Test public void upgradingAnActiveOldJobRechecksSleepOnceAndKeepsAlreadySavedMeasurements() {
+        Bundle job = start();
+        provider.call("historyPage", null, sleepPage(job));
+        LocalPrefs.open(context, MiFitnessMirrorProvider.HISTORY_PREFS).edit()
+                .remove("parserRevision").putInt("table", 2).putLong("time", 1700000000L).commit();
+        Bundle repaired = provider.call("historyJob", null, null);
+        assertEquals("sleep_segment", repaired.getString("table"));
+        assertEquals(-1, repaired.getLong("time"));
+        assertNotEquals(job.getString("token"), repaired.getString("token"));
+        assertEquals(repaired.getString("token"), provider.call("historyJob", null, null).getString("token"));
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            assertEquals(2, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+        }
+    }
 }

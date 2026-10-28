@@ -936,6 +936,8 @@ public final class MainActivity extends AppCompatActivity {
                     case "POINTS" -> "正在写入心率、血氧和压力";
                     case "STEPS" -> "正在写入步数";
                     case "SPORT" -> "正在写入运动";
+                    case "CLEANUP" -> "正在核对旧压力记录";
+                    case "RETRY" -> "部分记录等待重试，进度已保留";
                     case "WAIT_DEVICE" -> "正在获取 OPPO 手环信息";
                     case "ERROR" -> "OPPO 写入暂缓，将自动重试；可导出日志核对";
                     case "DONE" -> pending == 0 ? "当前一轮 OPPO 写入已结束" : "等待下一批写入";

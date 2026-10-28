@@ -24,6 +24,7 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
 
     public HealthRecordStore(Context context) {
         super(requireCredentialProtected(context), "health-outbox.db", null, 2);
+        setWriteAheadLoggingEnabled(true);
     }
     private static Context requireCredentialProtected(Context context) {
         if (context.isDeviceProtectedStorage()) throw new IllegalArgumentException("CE_STORAGE_REQUIRED");
@@ -169,7 +170,7 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
         }
     }
 
-    /** Import only missing facts. A DB snapshot never replaces a newer live file or a different account. */
+    /** Import missing facts and extend unfinished sleep; retain existing live point measurements. */
     public synchronized int importMissing(String accountHash, List<Measurement> measurements) {
         HistoryBatch result = importHistoryBatch(accountHash, List.of(measurements));
         if (result.full()) throw new IllegalStateException("HEALTH_OUTBOX_FULL");
@@ -194,6 +195,7 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
             }
             int added = 0, consumed = 0;
             for (List<Measurement> source : sourceRows) {
+                boolean completeNight = source.stream().anyMatch(row -> "sleep_interval".equals(row.kind) && row.complete);
                 List<Measurement> missing = new ArrayList<>();
                 java.util.HashSet<String> seen = new java.util.HashSet<>();
                 long bytes = 0, points = 0;
@@ -201,7 +203,23 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
                     if (!seen.add(measurement.recordId)) continue;
                     try (Cursor current = db.rawQuery("SELECT 1 FROM revisions WHERE account_hash=? AND record_id=?",
                             new String[]{accountHash, measurement.recordId})) {
-                        if (current.moveToFirst()) continue;
+                        if (current.moveToFirst()) {
+                            if (!"sleep_interval".equals(measurement.kind) && !"sleep_stage".equals(measurement.kind)) continue;
+                            try (Cursor saved = db.rawQuery("SELECT payload FROM measurements WHERE account_hash=? AND record_id=?",
+                                    new String[]{accountHash, measurement.recordId})) {
+                                if (!saved.moveToFirst()) continue;
+                                JSONObject old = new JSONObject(saved.getString(0));
+                                boolean interval = "sleep_interval".equals(measurement.kind) && measurement.complete
+                                        && !old.optBoolean("complete") && measurement.endMs >= old.getLong("endMs");
+                                boolean stage = completeNight && "sleep_stage".equals(measurement.kind)
+                                        && measurement.stage != null && measurement.stage == old.optInt("stage", -1)
+                                        && measurement.endMs > old.getLong("endMs");
+                                if ((!interval && !stage) || measurement.startMs != old.getLong("startMs")
+                                        || !measurement.deviceId.equals(old.getString("deviceId"))) continue;
+                            } catch (JSONException invalid) {
+                                throw new IllegalStateException("HEALTH_SAVED_SLEEP_INVALID", invalid);
+                            }
+                        }
                     }
                     if (isHostKind(measurement.kind)) {
                         points++;
@@ -366,7 +384,7 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
         if (!authorizedAccount(account)) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
         return getReadableDatabase().rawQuery("SELECT record_id AS recordId, revision, payload AS record "
                 + "FROM records WHERE account_hash=? AND account_hash=(SELECT account_hash FROM binding WHERE id=1 AND paused=0) "
-                + "ORDER BY rowid LIMIT " + PAGE_SIZE, new String[]{hashAccount(account)});
+                + "ORDER BY rowid DESC LIMIT " + PAGE_SIZE, new String[]{hashAccount(account)});
     }
 
     public synchronized int acknowledge(String account, String recordId, int revision) {
@@ -547,10 +565,21 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
     }
 
     public synchronized String sleepVersion(String account, String device) {
+        return historyVersion(account, device, "sleep");
+    }
+
+    public synchronized String historyVersion(String account, String device, String family) {
+        String kinds = switch (family) {
+            case "sleep" -> "'sleep_interval','sleep_stage','sleep_breath'";
+            case "breath" -> "'sleep_breath'";
+            case "steps" -> "'steps_day','steps_interval'";
+            case "sport" -> "'sport_session','sport_track'";
+            default -> throw new IllegalArgumentException("HEALTH_HISTORY_FAMILY_UNSUPPORTED");
+        };
         String hash = hashAccount(account);
         if (!hash.equals(confirmedAccountHash())) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
         try (Cursor rows = getReadableDatabase().rawQuery("SELECT COUNT(*), COALESCE(SUM(revision),0) FROM measurements "
-                + "WHERE account_hash=? AND device_id=? AND kind IN ('sleep_interval','sleep_stage','sleep_breath')",
+                + "WHERE account_hash=? AND device_id=? AND kind IN (" + kinds + ")",
                 new String[]{hash, device})) {
             rows.moveToFirst();
             return rows.getLong(0) + ":" + rows.getLong(1);

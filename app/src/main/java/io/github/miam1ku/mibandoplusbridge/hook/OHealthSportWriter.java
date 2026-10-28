@@ -27,6 +27,9 @@ final class OHealthSportWriter {
     private final Method setAccount, setDevice, setType, setStart, setEnd, setMode, setZone;
     private final Method setDisplay, setSync, setMeta, setClient, setVersion, setData;
     private final Method getStart, getEnd, getData, getMode, getDevice;
+    private String planKey;
+    private List<HealthRecord> planTracks = List.of();
+    private final java.util.ArrayDeque<HealthRecord> pendingSessions = new java.util.ArrayDeque<>();
 
     OHealthSportWriter(OHealthHealthImportHook.HostContract host) throws ReflectiveOperationException {
         this.host = host;
@@ -52,20 +55,35 @@ final class OHealthSportWriter {
         getDevice = type.getMethod("getDeviceUniqueId");
     }
 
-    void write(Context context) throws Exception {
+    boolean write(Context context) throws Exception {
         String account = host.account();
-        if (account == null || account.isBlank()) return;
+        if (account == null || account.isBlank()) return false;
         Object api = host.api();
         if (api == null) throw new IllegalStateException("SPORT_IMPORT_NOT_READY");
         Bundle band = OHealthDeviceHook.registeredSnapshot();
-        if (band == null || band.getString("deviceId", "").isBlank()) return;
+        if (band == null || band.getString("deviceId", "").isBlank()) return false;
         String queued = band.getString("deviceId");
         String device = OHealthDeviceHook.healthId(queued);
-        SharedPreferences written = context.getSharedPreferences("oplusband-sport-import", Context.MODE_PRIVATE);
-        List<HealthRecord> tracks = history(context, account, queued, "sport_track");
+        SharedPreferences written = context.getSharedPreferences("oplusband-sport-import-"
+                + io.github.miam1ku.mibandoplusbridge.data.HealthRecordStore.hashAccount(account), Context.MODE_PRIVATE);
+        String version = account + ":" + queued + ":" + device + ":"
+                + OHealthHealthImportHook.historyVersion(context, account, queued, "sport");
+        if (!version.equals(planKey)) {
+            var sessions = history(context, account, queued, "sport_session");
+            sessions.sort(java.util.Comparator.comparingLong((HealthRecord row) -> row.endMs).reversed());
+            planTracks = history(context, account, queued, "sport_track");
+            pendingSessions.clear();
+            pendingSessions.addAll(sessions);
+            planKey = version;
+        }
         int failed = 0;
-        for (HealthRecord record : history(context, account, queued, "sport_session")) {
-            HealthRecord track = match(record, tracks);
+        int attempted = 0, available = pendingSessions.size();
+        long turnStarted = android.os.SystemClock.elapsedRealtime();
+        for (int i = 0; i < available && attempted < 3; i++) {
+            if (attempted > 0 && android.os.SystemClock.elapsedRealtime() - turnStarted >= 3_000) break;
+            if (!account.equals(host.account())) throw new SecurityException("IMPORT_ACCOUNT_CHANGED");
+            HealthRecord record = pendingSessions.removeFirst();
+            HealthRecord track = match(record, planTracks);
             String key = device + ":" + record.recordId;
             long occupied;
             try {
@@ -83,7 +101,9 @@ final class OHealthSportWriter {
             long slot = nextSlot(record.endMs, saved, occupied, record.revision, trackLength);
             String mark = record.revision + ":" + trackLength + ":" + slot + ":u7";
             if (mark.equals(saved)) continue;
+            attempted++;
             if (!written.edit().putLong(key + ":end", slot).commit()) {
+                pendingSessions.addFirst(record);
                 throw new IllegalStateException("SPORT_IMPORT_MEMORY_FAILED");
             }
             try {
@@ -95,14 +115,23 @@ final class OHealthSportWriter {
                     }
                 } else {
                     failed++;
+                    pendingSessions.addLast(record);
                     HookRuntime.log("OHEALTH_SPORT_UNCONFIRMED mode=" + record.value);
                 }
-            } catch (Exception failure) {
+            } catch (SecurityException paused) {
+                pendingSessions.addFirst(record);
+                throw paused;
+            } catch (Exception | LinkageError failure) {
                 failed++;
+                pendingSessions.addLast(record);
                 HookRuntime.log("OHEALTH_SPORT_FAIL " + failure.getClass().getSimpleName());
             }
         }
+        if (attempted > 0) OHealthDeviceHook.traceLine(context, "OHEALTH_SPORT_IMPORT processed=" + attempted
+                + " failed=" + failed + " remaining=" + pendingSessions.size());
         if (failed > 0) throw new IllegalStateException("SPORT_IMPORT_INCOMPLETE");
+        if (pendingSessions.isEmpty()) planTracks = List.of();
+        return !pendingSessions.isEmpty();
     }
 
     private static HealthRecord match(HealthRecord session, List<HealthRecord> tracks) {

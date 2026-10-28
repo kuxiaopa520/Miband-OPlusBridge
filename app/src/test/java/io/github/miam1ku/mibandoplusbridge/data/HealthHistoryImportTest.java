@@ -53,6 +53,29 @@ public final class HealthHistoryImportTest {
         }
     }
 
+    @Test public void completeSleepHistoryExtendsAPreviouslyTruncatedNightWithoutDuplicatingItsStages() throws Exception {
+        String partial = "{\"bedtime\":1700000000,\"wake_up_time\":1700007200,\"is_uncomplete\":true,"
+                + "\"items\":[{\"start_time\":1700000000,\"end_time\":1700007200,\"state\":3}]}";
+        String complete = partial.replace("1700007200", "1700014400").replace("\"is_uncomplete\":true", "\"is_uncomplete\":false");
+        var first = parser.parse("sleep_segment", "sleep", 1700007200L, partial, 0, "UTC", false);
+        var full = parser.parse("sleep_segment", "sleep", 1700014400L, complete, 0, "UTC", true);
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(account);
+            assertEquals(2, store.importMissing(account, first));
+            assertEquals(2, store.importMissing(account, full));
+            assertEquals(0, store.importMissing(account, first));
+            assertEquals(0, store.importMissing(account, full));
+            assertEquals(2, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+            try (var rows = store.getReadableDatabase().rawQuery("SELECT payload FROM measurements", null)) {
+                while (rows.moveToNext()) {
+                    var row = new JSONObject(rows.getString(0));
+                    assertEquals(1700014400000L, row.getLong("endMs"));
+                    assertEquals(2, row.getInt("revision"));
+                }
+            }
+        }
+    }
+
     @Test public void queueFullRollsBackTheRowAndLeavesPreviouslyStoredHistoryIntact() throws Exception {
         var rows = new ArrayList<>(parser.parse("step_record", "steps", 1700000000L, "{\"steps\":12}", 0, "UTC", true));
         rows.addAll(parser.parse("hr_record", "heart_rate", 1700000000L, "{\"bpm\":62}", 0, "UTC", true));
@@ -121,5 +144,44 @@ public final class HealthHistoryImportTest {
             assertEquals(0, store.count());
             assertEquals(1, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
         }
+    }
+
+    @Test public void pendingPagePrioritizesNewDataAndReceiptsRetainTheOlderBacklog() throws Exception {
+        var first = parser.parse("hr_record", "heart_rate", 1700000000L, "{\"bpm\":62}", 0, "UTC", true).get(0);
+        var latest = parser.parse("hr_record", "heart_rate", 1700000060L, "{\"bpm\":72}", 0, "UTC", true).get(0);
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(account);
+            store.enqueueMeasurement(first);
+            store.enqueueMeasurement(latest);
+            String version = store.historyVersion("history-account", first.deviceId, "steps");
+            try (var page = store.pending("history-account")) {
+                assertTrue(page.moveToFirst());
+                assertEquals(latest.recordId, page.getString(0));
+                assertTrue(page.moveToNext());
+                assertEquals(first.recordId, page.getString(0));
+            }
+            store.acknowledgeBatch("history-account", new String[]{latest.recordId}, new int[]{1});
+            assertEquals(1, store.count());
+            assertEquals(version, store.historyVersion("history-account", first.deviceId, "steps"));
+            assertThrows(SecurityException.class, () -> store.historyVersion("wrong", first.deviceId, "steps"));
+            assertThrows(IllegalArgumentException.class, () -> store.historyVersion("history-account", first.deviceId, "other"));
+        }
+    }
+
+    @Test public void statusReaderDoesNotWaitForAnotherProvidersHistoryTransaction() throws Exception {
+        var row = parser.parse("hr_record", "heart_rate", 1700000000L, "{\"bpm\":62}", 0, "UTC", true).get(0);
+        var reader = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (HealthRecordStore writer = new HealthRecordStore(context); HealthRecordStore status = new HealthRecordStore(context)) {
+            writer.confirmAccountHash(account);
+            status.getReadableDatabase();
+            var db = writer.getWritableDatabase();
+            db.beginTransaction();
+            try {
+                writer.enqueueMeasurement(row);
+                assertEquals(Integer.valueOf(0), reader.submit(status::count).get(3, java.util.concurrent.TimeUnit.SECONDS));
+                db.setTransactionSuccessful();
+            } finally { db.endTransaction(); }
+            assertEquals(1, status.count());
+        } finally { reader.shutdownNow(); }
     }
 }

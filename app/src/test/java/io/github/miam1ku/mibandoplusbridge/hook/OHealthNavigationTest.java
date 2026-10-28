@@ -72,6 +72,40 @@ public final class OHealthNavigationTest {
         public final androidx.lifecycle.MutableLiveData<Boolean> q = new androidx.lifecycle.MutableLiveData<>();
     }
 
+    public static final class Panel {
+        public String t = "01:02:03:04:05:06", l = "miband11_selected";
+    }
+    public static final class PanelRow {
+        public int a, f;
+        public String i = "https://example.test/oppo-watch.png", j = "oppo-watch-3d";
+        public boolean k = true;
+        PanelRow(int type, int action) { a = type; f = action; }
+    }
+
+    @Test public void controlCenterKeepsTheNativePanelButUsesTheBandImageAndOnlyWorkingActions() throws Exception {
+        Field state = OHealthDeviceHook.class.getDeclaredField("snapshot"); state.setAccessible(true);
+        Object previous = state.get(null);
+        Bundle band = new Bundle();
+        band.putBoolean("registered", true); band.putString("mac", "01:02:03:04:05:06");
+        band.putString("modelId", "miwear.watch.o66nfc");
+        band.putString("imageUri", "content://io.github.miam1ku.mibandoplusbridge.devices/device_image/miband-body-1.png");
+        state.set(null, band);
+        try {
+            PanelRow picture = new PanelRow(3, 0), battery = new PanelRow(1, 0), open = new PanelRow(2, 4);
+            var original = java.util.List.of(picture, battery, new PanelRow(2, 2), new PanelRow(2, 11), open);
+            var projected = OHealthDeviceHook.panelRows610(new Panel(), original);
+            assertEquals(java.util.List.of(picture, battery, open), projected);
+            assertEquals(band.getString("imageUri"), picture.i);
+            assertFalse(picture.k);
+            assertEquals("", picture.j);
+            Panel other = new Panel(); other.t = "11:12:13:14:15:16";
+            assertSame(original, OHealthDeviceHook.panelRows610(other, original));
+            band.putString("imageUri", "");
+            OHealthDeviceHook.panelRows610(new Panel(), original);
+            assertEquals("android.resource://com.heytap.mydevices/drawable/default_wristband", picture.i);
+        } finally { state.set(null, previous); }
+    }
+
     @Test public void nativePanelShowsTheCurrentBandWithoutChangingAnotherDevice() throws Exception {
         Field state = OHealthDeviceHook.class.getDeclaredField("snapshot"); state.setAccessible(true);
         Object previous = state.get(null);

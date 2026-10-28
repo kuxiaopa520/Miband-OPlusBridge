@@ -42,8 +42,8 @@
     "version": "3.59.1",
     "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
     "hashMatches": true,
-    "classesChecked": 11,
-    "methodsChecked": 19,
+    "classesChecked": 13,
+    "methodsChecked": 27,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -54,9 +54,11 @@
       "com.xiaomi.fit.fitness.eco.device.mi.receive.FitnessReceiverHandler": "classes10.dex",
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase$Companion": "classes10.dex",
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase": "classes10.dex",
+      "com.xiaomi.fit.fitness.persist.db.internal.SportReportEntity": "classes10.dex",
       "com.xiaomi.wearable.core.DeviceInfo": "classes3.dex",
       "com.xiaomi.wearable.core.WearApiResult": "classes3.dex",
       "com.xiaomi.wearable.wear.api.WearApiCall": "classes3.dex",
+      "com.xiaomi.fit.data.common.data.sport.SportBasicReport": "classes9.dex",
       "com.xiaomi.fit.device.extensions.DeviceModelExtKt": "classes9.dex"
     },
     "passed": true

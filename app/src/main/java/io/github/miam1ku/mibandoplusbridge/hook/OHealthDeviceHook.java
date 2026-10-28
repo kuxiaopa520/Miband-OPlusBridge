@@ -246,6 +246,21 @@ public final class OHealthDeviceHook {
     }
 
     private static void installNativePanel610(ClassLoader loader) {
+        XC_MethodHook rows = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                if (param.args[0] instanceof List<?> supplied) param.args[0] = panelRows610(param.thisObject, supplied);
+            }
+        };
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceDetailsActivity", loader,
+                "u6", List.class, rows);
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceDetailsPanelActivity", loader,
+                "u6", List.class, rows);
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceDetailsPanelActivity", loader,
+                "D6", new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        if (ourMac(XposedHelpers.getObjectField(param.thisObject, "t"))) param.setResult(true);
+                    }
+                });
         String viewModel = "com.heytap.health.linkage.ui.DeviceDetailsViewModel";
         XposedHelpers.findAndHookMethod(viewModel, loader, "u", String.class, boolean.class, boolean.class,
                 new XC_MethodHook() {
@@ -283,6 +298,28 @@ public final class OHealthDeviceHook {
                         param.setResult(info);
                     }
                 });
+    }
+
+    /** Keep native battery, image and Open Health rows; OPPO firmware/watch faces cannot control this band. */
+    static List<?> panelRows610(Object panel, List<?> supplied) throws IllegalAccessException {
+        Bundle shown = display();
+        if (shown == null || !io.github.miam1ku.mibandoplusbridge.data.MacIds.same(
+                shown.getString("mac", ""), String.valueOf(XposedHelpers.getObjectField(panel, "t")))) return supplied;
+        ArrayList<Object> kept = new ArrayList<>();
+        String image = shown.getString("imageUri", "");
+        if (image.isBlank()) image = "android.resource://com.heytap.mydevices/drawable/"
+                + io.github.miam1ku.mibandoplusbridge.data.BandCatalog.spaceIcon(shown.getString("modelId", ""));
+        for (Object row : supplied) {
+            int type = XposedHelpers.getIntField(row, "a");
+            if (type == 2 && XposedHelpers.getIntField(row, "f") != 4) continue;
+            if (type == 3) {
+                XposedHelpers.findField(row.getClass(), "i").set(row, image);
+                XposedHelpers.findField(row.getClass(), "j").set(row, "");
+                XposedHelpers.setBooleanField(row, "k", false);
+            }
+            kept.add(row);
+        }
+        return kept;
     }
 
     /** 6.10.12 renamed the native panel fields; only the selected bridge band is projected. */

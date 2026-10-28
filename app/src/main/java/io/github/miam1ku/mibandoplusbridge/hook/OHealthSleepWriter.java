@@ -42,7 +42,12 @@ final class OHealthSleepWriter {
     private final Method statGetDevice, statGetDate, statGetFall, statGetWake, statGetSleep,
             statGetDeep, statGetLight, statGetRem, statGetAwake;
     private final Method breathAccount, breathDevice, breathDeviceType, breathTime, breathValue, breathConfig;
-    private String importedVersion;
+    private String planKey;
+    private String planIdentity;
+    private String breathVersion;
+    private final java.util.ArrayDeque<OHealthSleepPlan.Day> pendingDays = new java.util.ArrayDeque<>();
+    private final java.util.Set<OHealthSleepPlan.Day> completedDays = new java.util.HashSet<>();
+    private int totalDays;
 
     OHealthSleepWriter(OHealthHealthImportHook.HostContract host) throws ReflectiveOperationException {
         this.host = host;
@@ -124,9 +129,9 @@ final class OHealthSleepWriter {
         breathConfig = bConfig;
     }
 
-    void write(Context context) throws Exception {
+    boolean write(Context context) throws Exception {
         String account = host.account();
-        if (account == null || account.isBlank()) return;
+        if (account == null || account.isBlank()) return false;
         Object api = host.api();
         if (api == null) throw new IllegalStateException("SLEEP_IMPORT_NOT_READY");
         Bundle band = OHealthDeviceHook.registeredSnapshot();
@@ -135,31 +140,39 @@ final class OHealthSleepWriter {
         }
         String queued = band.getString("deviceId", "");
         String device = OHealthDeviceHook.healthId(queued);
-        Bundle versionRequest = new Bundle();
-        versionRequest.putString("account", account);
-        versionRequest.putString("deviceId", queued);
-        Bundle versionReply = context.getContentResolver().call(HealthQueueProvider.URI, "sleepVersion", null, versionRequest);
-        String version = versionReply == null ? null : versionReply.getString("version");
+        String version = OHealthHealthImportHook.historyVersion(context, account, queued, "sleep");
         ZoneId zone = ZoneId.systemDefault();
-        String key = version == null ? null : account + ":" + queued + ":" + device + ":" + zone.getId() + ":" + version;
-        if (key != null && key.equals(importedVersion)) return;
-        List<HealthRecord> records = history(context, account, queued);
-        HookRuntime.log("OHEALTH_SLEEP_ZONE " + zone.getId());
-        List<OHealthSleepPlan.Night> nights = OHealthSleepPlan.nights(records, zone);
-        if (nights.isEmpty()) { importedVersion = key; return; }
-        List<OHealthSleepPlan.Day> days = OHealthSleepPlan.days(nights);
-        if (days.isEmpty()) return;
-        days = new ArrayList<>(days);
-        days.sort(Comparator.comparingInt(OHealthSleepPlan.Day::date).reversed());
-        HookRuntime.log("OHEALTH_SLEEP_BEGIN days=" + days.size() + " nights=" + nights.size());
+        String identity = account + ":" + queued + ":" + device + ":" + zone.getId();
+        String key = identity + ":" + version;
+        if (!key.equals(planKey)) {
+            String breath = OHealthHealthImportHook.historyVersion(context, account, queued, "breath");
+            List<OHealthSleepPlan.Day> days = new ArrayList<>(OHealthSleepPlan.days(
+                    OHealthSleepPlan.nights(history(context, account, queued), zone)));
+            days.sort(Comparator.comparingInt(OHealthSleepPlan.Day::date).reversed());
+            if (!identity.equals(planIdentity) || !breath.equals(breathVersion)) completedDays.clear();
+            completedDays.retainAll(days);
+            pendingDays.clear();
+            for (var day : days) if (!completedDays.contains(day)) pendingDays.add(day);
+            totalDays = days.size();
+            planIdentity = identity;
+            breathVersion = breath;
+            planKey = key;
+            OHealthDeviceHook.traceLine(context, "OHEALTH_SLEEP_BEGIN days=" + totalDays + " remaining=" + pendingDays.size());
+        }
+        if (pendingDays.isEmpty()) return false;
         int inserted = 0;
         int skipped = 0;
         int held = 0;
         int failed = 0;
-        for (OHealthSleepPlan.Day day : days) {
+        int limit = Math.min(3, pendingDays.size());
+        long turnStarted = android.os.SystemClock.elapsedRealtime();
+        for (int i = 0; i < limit; i++) {
+            if (i > 0 && android.os.SystemClock.elapsedRealtime() - turnStarted >= 3_000) break;
             if (!account.equals(host.account())) throw new SecurityException("IMPORT_ACCOUNT_CHANGED");
+            OHealthSleepPlan.Day day = pendingDays.removeFirst();
             try {
                 String skip = writeDay(context, api, account, device, queued, day);
+                completedDays.add(day);
                 if (skip == null) inserted++;
                 else {
                     skipped++;
@@ -168,8 +181,10 @@ final class OHealthSleepWriter {
                     OHealthDeviceHook.traceLine(context, line);
                 }
             } catch (SecurityException paused) {
+                pendingDays.addFirst(day);
                 throw paused;
             } catch (IllegalStateException heldDay) {
+                pendingDays.addLast(day);
                 String reason = heldDay.getMessage();
                 if (reason != null && reason.startsWith("SLEEP_SEGMENT_UNCONFIRMED")) {
                     held++;
@@ -183,6 +198,7 @@ final class OHealthSleepWriter {
                     OHealthDeviceHook.traceLine(context, line);
                 }
             } catch (Exception | LinkageError failedDay) {
+                pendingDays.addLast(day);
                 failed++;
                 String line = "OHEALTH_SLEEP_DAY_FAILED date=" + day.date() + " "
                         + failedDay.getClass().getSimpleName()
@@ -190,16 +206,15 @@ final class OHealthSleepWriter {
                 HookRuntime.log(line);
                 OHealthDeviceHook.traceLine(context, line);
             }
-            if ((inserted + skipped + held + failed) % 10 == 0) reportProgress(context, account,
-                    inserted + skipped, days.size());
         }
-        String summary = "OHEALTH_SLEEP_IMPORT days=" + days.size()
-                + " inserted=" + inserted + " skipped=" + skipped + " held=" + held + " failed=" + failed;
+        String summary = "OHEALTH_SLEEP_IMPORT days=" + totalDays
+                + " inserted=" + inserted + " skipped=" + skipped + " held=" + held + " failed=" + failed
+                + " remaining=" + pendingDays.size();
         HookRuntime.log(summary);
         OHealthDeviceHook.traceLine(context, summary);
-        reportProgress(context, account, inserted + skipped, days.size());
-        if (held == 0 && failed == 0) importedVersion = key;
-        else throw new IllegalStateException("SLEEP_IMPORT_INCOMPLETE");
+        reportProgress(context, account, totalDays - pendingDays.size(), totalDays);
+        if (held > 0 || failed > 0) throw new IllegalStateException("SLEEP_IMPORT_INCOMPLETE");
+        return !pendingDays.isEmpty();
     }
 
     private static void reportProgress(Context context, String account, int done, int total) {
