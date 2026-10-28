@@ -588,7 +588,7 @@ public final class BandHistoryParser {
         };
     }
 
-    private Measurement sleepStage(long start, long end, int stage, String timezone) {
+    Measurement sleepStage(long start, long end, int stage, String timezone) {
         if (start < 0 || end <= start) throw new SemanticException("INVALID_HISTORY_TIMESTAMP");
         return new Measurement(recordId("sleep_stage", start) + ":sleep", deviceId, "sleep_stage",
                 start, end, null, stage, timezone, "sleep", false,
@@ -610,7 +610,7 @@ public final class BandHistoryParser {
         return measurement(kind, start, end, value, timezone, mode, complete, null, null, null);
     }
 
-    private Measurement measurement(String kind, long start, long end, Number value,
+    Measurement measurement(String kind, long start, long end, Number value,
             String timezone, String mode, boolean complete, Integer calories, Integer distance,
             Integer moveAbout) {
         if (start < 0 || end <= start) throw new SemanticException("INVALID_HISTORY_TIMESTAMP");

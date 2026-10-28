@@ -34,6 +34,7 @@ import io.github.miam1ku.mibandoplusbridge.integration.BandDetailsActivity;
 import io.github.miam1ku.mibandoplusbridge.integration.CredentialProvider;
 import io.github.miam1ku.mibandoplusbridge.integration.DeviceCardProvider;
 import io.github.miam1ku.mibandoplusbridge.integration.HealthQueueProvider;
+import io.github.miam1ku.mibandoplusbridge.integration.MiFitnessMirrorProvider;
 import io.github.miam1ku.mibandoplusbridge.notify.BandNotificationListener;
 import io.github.miam1ku.mibandoplusbridge.notify.SleepMusic;
 import io.github.miam1ku.mibandoplusbridge.protocol.SppDiagnosticClient;
@@ -72,6 +73,8 @@ public final class MainActivity extends AppCompatActivity {
     private TextView ownershipStatus;
     private Button homePrimary;
     private MaterialSwitch sleepPause;
+    private Button historyImport;
+    private TextView historyProgress;
     // setup card
     private LinearLayout setupCard;
     private TextView setupTitle;
@@ -121,6 +124,9 @@ public final class MainActivity extends AppCompatActivity {
             refreshDevice();
         }
     };
+    private final ContentObserver historyImportObserver = new ContentObserver(main) {
+        @Override public void onChange(boolean selfChange) { refreshHistoryImport(); }
+    };
     private final Runnable expireRefresh = this::refresh;
 
     @Override public void onCreate(Bundle state) {
@@ -136,6 +142,7 @@ public final class MainActivity extends AppCompatActivity {
         getContentResolver().registerContentObserver(CredentialProvider.URI, false, observer);
         getContentResolver().registerContentObserver(DeviceCardProvider.URI, false, deviceObserver);
         getContentResolver().registerContentObserver(HealthQueueProvider.URI, false, deviceObserver);
+        getContentResolver().registerContentObserver(MiFitnessMirrorProvider.HISTORY_URI, true, historyImportObserver);
         refreshDevice();
         requestRoot();
     }
@@ -192,19 +199,27 @@ public final class MainActivity extends AppCompatActivity {
         screen.heading("功能");
         LinearLayout modeCard = screen.card();
         MaterialSwitch coexist = screen.switchRow(modeCard, "与小米运动健康共存（实验）",
-                "小米运动健康负责连接、通知、天气和设备设置；桥接把新同步的健康文件复制给 OPPO 健康。"
+                "小米运动健康负责连接、通知、天气和设备设置；桥接复制健康数据，也可补读小米 App 已下载的历史。"
                         + "关闭后可选择桥接独占接管。更改后点首页主按钮生效。");
         coexist.setChecked(new OwnershipController(this).prefersCoexistence());
         coexist.setOnCheckedChangeListener((button, checked) -> {
             new OwnershipController(this).preferCoexistence(checked);
-            if (sleepPause != null) sleepPause.setEnabled(!checked);
+            if (sleepPause != null) sleepPause.setEnabled(new OwnershipController(this).nativeReady());
             updateControls();
             refreshNotices();
         });
         LinearLayout links = screen.card();
         screen.navRow(links, "设备详情", () -> startActivity(new Intent(this, BandDetailsActivity.class)));
-        screen.navRow(links, "天气同步（独占接管）", () -> startActivity(new Intent(this, WeatherActivity.class)));
+        screen.navRow(links, "天气同步", () -> {
+            if (new OwnershipController(this).nativeReady()) startActivity(new Intent(this, WeatherActivity.class));
+            else launchMiHealth();
+        });
         screen.caption(links, "共存时在小米运动健康中同步；独占接管时可用「手环」磁贴连接。");
+        LinearLayout historyCard = screen.card();
+        historyImport = screen.outlined(historyCard, "补齐小米历史数据", this::startHistoryImport);
+        historyProgress = screen.caption(historyCard, "");
+        screen.caption(historyCard, "先在 OPPO 健康登录并打开首页，再点补齐。只读取当前小米账号下这只手环已下载的睡眠、步数、心率、血氧和压力。"
+                + "仅在小米云端的旧记录，请先在小米 App 打开对应日期下载，再补齐一次。");
 
         LinearLayout sleepCard = screen.card();
         sleepPause = screen.switchRow(sleepCard, "入睡后暂停音乐（独占接管）",
@@ -212,7 +227,7 @@ public final class MainActivity extends AppCompatActivity {
                         + "通过睡眠记录报告入睡的手环，会在记录同步后暂停，通常需要几分钟。");
         final boolean[] writingSleepPause = {false};
         sleepPause.setChecked(SleepMusic.enabled(this));
-        sleepPause.setEnabled(!new OwnershipController(this).prefersCoexistence());
+        sleepPause.setEnabled(new OwnershipController(this).nativeReady());
         sleepPause.setOnCheckedChangeListener((button, checked) -> {
             if (writingSleepPause[0]) return;
             if (SleepMusic.setEnabled(this, checked)) {
@@ -331,6 +346,7 @@ public final class MainActivity extends AppCompatActivity {
     @Override protected void onDestroy() {
         getContentResolver().unregisterContentObserver(observer);
         getContentResolver().unregisterContentObserver(deviceObserver);
+        getContentResolver().unregisterContentObserver(historyImportObserver);
         main.removeCallbacks(expireRefresh);
         worker.shutdown();
         super.onDestroy();
@@ -340,7 +356,7 @@ public final class MainActivity extends AppCompatActivity {
 
     private void refreshNotices() {
         if (nearbyNotice == null) return;
-        boolean coexist = new OwnershipController(this).prefersCoexistence();
+        boolean coexist = !new OwnershipController(this).nativeReady();
         setShown(nearbyNotice, !coexist && !hasBluetoothPermission());
         setShown(notifyNotice, !coexist && !getSystemService(NotificationManager.class).areNotificationsEnabled());
         LocalPrefs prefs = LocalPrefs.open(this, BandNotificationListener.SETTINGS);
@@ -517,6 +533,11 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void changeOwnership(Change change) {
+        if ((change == Change.ADD || change == Change.RECONNECT) && HostVersionNotice.is610(this)
+                && !new OwnershipController(this).prefersCoexistence()) {
+            ownershipStatus.setText("OPPO 健康 6.10.12 当前适配共存流程，请开启共存开关后继续。");
+            return;
+        }
         if (worker.isShutdown() || changingOwnership) return;
         if (!rootGranted) {
             requestRoot();
@@ -790,6 +811,7 @@ public final class MainActivity extends AppCompatActivity {
         if (isDestroyed() || worker.isShutdown()) return;
         updateControls();
         refreshNotices();
+        refreshHistoryImport();
         if (!isUnlocked()) {
             deviceName.setText("小米手环");
             screen.setChip(statusChip, "解锁后显示", Tone.NEUTRAL);
@@ -827,6 +849,59 @@ public final class MainActivity extends AppCompatActivity {
         } catch (Exception unavailable) {
             setOptionalCaption(metricsLine, "解锁手机后显示绑定信息，已有数据都在。");
         }
+    }
+
+    private void startHistoryImport() {
+        historyImport.setEnabled(false);
+        worker.execute(() -> {
+            Bundle result;
+            try {
+                result = getContentResolver().call(MiFitnessMirrorProvider.URI, "historyStart", null, null);
+            } catch (RuntimeException unavailable) {
+                result = new Bundle();
+                result.putString("status", "MI_HISTORY_STORAGE_RETRY");
+            }
+            Bundle reply = result;
+            main.post(() -> {
+                if (isDestroyed()) return;
+                showHistoryImport(reply);
+                historyImport.setEnabled(new OwnershipController(this).coexistReady());
+                if (reply != null && reply.getBoolean("active")) launchMiHealth();
+            });
+        });
+    }
+
+    private void refreshHistoryImport() {
+        if (historyImport == null || historyProgress == null || !isUnlocked()) return;
+        historyImport.setEnabled(!changingOwnership && new OwnershipController(this).coexistReady());
+        if (sleepPause != null) sleepPause.setEnabled(new OwnershipController(this).nativeReady());
+        try {
+            showHistoryImport(getContentResolver().call(MiFitnessMirrorProvider.URI, "historyStatus", null, null));
+        } catch (RuntimeException unavailable) {
+            historyProgress.setText("历史导入状态稍后更新，可再次点补齐。");
+        }
+    }
+
+    private void showHistoryImport(Bundle result) {
+        String code = result == null ? "" : result.getString("status", "");
+        String text = switch (code) {
+            case "MI_HISTORY_NOT_STARTED" -> "共存模式可补齐以前的记录，睡眠优先。";
+            case "MI_HISTORY_OPEN_OPPO", "MI_HISTORY_ACCOUNT_CHANGED" -> "先打开 OPPO 健康，登录并进入首页，再回来点补齐。";
+            case "MI_HISTORY_REIMPORT_BINDING", "MI_HISTORY_SOURCE_ACCOUNT_CHANGED" -> "请先重新导入当前小米账号下的手环绑定，再继续补齐。";
+            case "MI_HISTORY_WAITING_MI" -> "已排队，请打开小米运动健康并保持运行。";
+            case "MI_HISTORY_RUNNING" -> "正在补读历史，保持两个健康 App 运行。";
+            case "MI_HISTORY_OPEN_OPPO_QUEUE_FULL" -> "待写队列已满，请打开 OPPO 健康处理后继续，进度已保留。";
+            case "MI_HISTORY_LOCAL_COMPLETE" -> "本机历史补读完成，请打开 OPPO 健康核对对应日期。";
+            case "MI_MIRROR_INACTIVE", "MI_HISTORY_DEVICE_CHANGED" -> "先保持共存开启并添加这只手环，再补齐。";
+            case "MI_HISTORY_SCHEMA_UNSUPPORTED", "MI_HISTORY_DATABASE_UNAVAILABLE", "MI_HISTORY_READ_FAILED" -> "正在等待小米本地历史；保持小米 App 登录，稍后重试。可导出调试日志以便核对。";
+            default -> "导入暂缓，进度已保留，可再次点补齐重试。";
+        };
+        if (result != null && result.containsKey("rows")) {
+            text += "\n已读 " + result.getLong("rows") + " 条，睡眠 " + result.getLong("sleepRows")
+                    + " 段，新增 " + result.getLong("added") + " 条测量，跳过 " + result.getLong("skipped") + " 条。";
+            if (result.getLong("skipped") > 0) text += " 部分记录需要补充分期或适配格式，原因已记入调试状态。";
+        }
+        historyProgress.setText(text);
     }
 
     private static String metricsText(LocalPrefs state) {

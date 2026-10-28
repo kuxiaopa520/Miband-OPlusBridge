@@ -44,7 +44,11 @@ public final class PhoneAlarmProvider extends ContentProvider {
             status.putString("status", "QUEUED");
             return status;
         }
-        if (extras == null) return null;
+        if (extras == null
+                || !new io.github.miam1ku.mibandoplusbridge.service.OwnershipController(getContext()).nativeReady()) {
+            replyTo = null;
+            return null;
+        }
         android.os.Messenger reply = extras.getParcelable("reply", android.os.Messenger.class);
         if (reply != null) replyTo = reply;
         int op = extras.getInt("op", -1);

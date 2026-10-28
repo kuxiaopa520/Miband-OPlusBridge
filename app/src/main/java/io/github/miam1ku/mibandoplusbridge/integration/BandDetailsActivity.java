@@ -75,6 +75,7 @@ public final class BandDetailsActivity extends AppCompatActivity {
         history = screen.caption(statusCard, "");
         LinearLayout links = screen.card();
         screen.navRow(links, "打开 OPPO 健康", () -> openPackage(OHEALTH));
+        screen.navRow(links, "小米运动健康 · 设备设置", () -> openPackage("com.mi.health"));
         screen.navRow(links, "打开 KernelSU", () -> openPackage(KERNELSU));
         screen.heading("已保存历史");
         screen.caption("当前 OHealth 账号下这只手环的记录。移除设备后记录照样保留。");
@@ -270,6 +271,14 @@ public final class BandDetailsActivity extends AppCompatActivity {
     private boolean openNativePanelIfRequested() {
         Intent incoming = getIntent();
         if (!panelRequest(incoming)) return false;
+        if (new io.github.miam1ku.mibandoplusbridge.service.OwnershipController(this).coexistReady()) {
+            Intent official = getPackageManager().getLaunchIntentForPackage("com.mi.health");
+            if (official == null) return false;
+            try { startActivity(official); }
+            catch (ActivityNotFoundException | SecurityException unavailable) { return false; }
+            finish();
+            return true;
+        }
         Intent panel = new Intent(incoming);
         if (!NativePanel.redirect(this, panel)) return false;
         try {

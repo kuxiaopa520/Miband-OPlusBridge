@@ -51,7 +51,7 @@ def declared_methods(apk, wanted):
                 if owner not in wanted:
                     continue
                 parent = u32(off + 8)
-                entry = {"dex": name, "methods": [], "superclass": "" if parent == 0xffffffff
+                entry = {"dex": name, "methods": [], "fields": [], "superclass": "" if parent == 0xffffffff
                          else typ(parent)[1:-1].replace("/", ".")}
                 found[owner] = entry
                 body = u32(off + 24)
@@ -61,9 +61,14 @@ def declared_methods(apk, wanted):
                 for _ in range(4):
                     size, body = uleb(body)
                     sizes.append(size)
-                for _ in range(sizes[0] + sizes[1]):
-                    _, body = uleb(body)
-                    _, body = uleb(body)
+                for size in sizes[:2]:
+                    idx = 0
+                    for _ in range(size):
+                        delta, body = uleb(body)
+                        _, body = uleb(body)
+                        idx += delta
+                        field = u32(84) + 8 * idx
+                        entry["fields"].append(string(u32(field + 4)) + ":" + typ(struct.unpack_from("<H", data, field + 2)[0]))
                 for size in sizes[2:]:
                     idx = 0
                     for _ in range(size):
@@ -100,14 +105,26 @@ def main():
     parser.add_argument("--oppo", required=True, type=Path)
     parser.add_argument("--mi", required=True, type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--spec", type=Path, default=Path(__file__).resolve().parents[1] / "compat/coexist-hosts.json")
     args = parser.parse_args()
-    spec = json.loads((Path(__file__).resolve().parents[1] / "compat/coexist-hosts.json").read_text(encoding="utf-8"))
+    spec = json.loads(args.spec.read_text(encoding="utf-8"))
+    if "extends" in spec:
+        base = json.loads((args.spec.parent / spec["extends"]).read_text(encoding="utf-8"))
+        for key in ("oppo", "mi"):
+            changes = spec.get(key, {})
+            target = base[key]
+            for name in changes.get("removeClasses", []):
+                target["classes"].pop(name, None)
+            target["classes"].update(changes.get("classes", {}))
+            target.update({name: value for name, value in changes.items() if name not in ("classes", "removeClasses")})
+        spec = base
     reports = []
     for key, path in (("oppo", args.oppo), ("mi", args.mi)):
         target = spec[key]
         with path.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
-        classes = declared_methods(path, target["classes"])
+        wanted = set(target["classes"]) | set(target.get("fields", {}))
+        classes = declared_methods(path, wanted)
         missing = []
         count = 0
         for name, methods in target["classes"].items():
@@ -118,10 +135,18 @@ def main():
                 count += 1
                 if not has_method(classes, name, method):
                     missing.append(name + "." + method)
+        fields_checked = 0
+        for name, fields in target.get("fields", {}).items():
+            for field in fields:
+                fields_checked += 1
+                if field not in classes.get(name, {}).get("fields", []):
+                    missing.append(name + "." + field)
         report = {"package": target["package"], "version": target["version"], "sha256": digest,
                   "hashMatches": digest == target["sha256"], "classesChecked": len(target["classes"]),
                   "methodsChecked": count, "missing": missing, "runtimeVerified": False,
                   "dexLocations": {name: item["dex"] for name, item in classes.items()}}
+        if fields_checked:
+            report["fieldsChecked"] = fields_checked
         report["passed"] = report["hashMatches"] and not missing
         reports.append(report)
         print(f'{target["package"]}: {"PASS" if report["passed"] else "FAIL"}; '

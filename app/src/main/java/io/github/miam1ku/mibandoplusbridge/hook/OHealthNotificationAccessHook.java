@@ -38,6 +38,7 @@ public final class OHealthNotificationAccessHook {
     public static void install(Context context, ClassLoader loader) throws ClassNotFoundException {
         XC_MethodHook grant = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (!OHealthDeviceHook.nativeControls()) return;
                 if (Boolean.TRUE.equals(param.getResult())) return;
                 Context host = contextArg(param);
                 if (host != null && granted(host)) param.setResult(true);
@@ -54,6 +55,7 @@ public final class OHealthNotificationAccessHook {
         XposedHelpers.findAndHookMethod(NotificationManager.class, "isNotificationListenerAccessGranted",
                 ComponentName.class, new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
+                        if (!OHealthDeviceHook.nativeControls()) return;
                         if (!(param.args[0] instanceof ComponentName name)) return;
                         if (!LISTENER.equals(name.getClassName())) return;
                         boolean raw = Boolean.TRUE.equals(param.getResult());
@@ -69,6 +71,7 @@ public final class OHealthNotificationAccessHook {
                 "com.heytap.health.device.tab.itemview.wearable.MenuNotificationItem", false, loader);
         XposedBridge.hookAllMethods(item, "initData", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (!OHealthDeviceHook.nativeControls()) return;
                 try {
                     Object controller = XposedHelpers.callMethod(param.thisObject, "getController");
                     Object label = XposedHelpers.callMethod(param.thisObject, "getMTvRight");
@@ -132,6 +135,7 @@ public final class OHealthNotificationAccessHook {
     private static XC_MethodHook keep(boolean stop) {
         return new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (!OHealthDeviceHook.nativeControls()) return;
                 Context context = contextArg(param);
                 if (context == null) return;
                 boolean listed = granted(context);
@@ -158,7 +162,7 @@ public final class OHealthNotificationAccessHook {
     }
 
     private static void retry(Context context, Handler handler, long[] waits, int done) {
-        if (done >= waits.length || serviceConnected.get()) return;
+        if (done >= waits.length || serviceConnected.get() || !OHealthDeviceHook.nativeControls()) return;
         rebind(context);
         note(context, "OHEALTH_LISTENER rebind-retry n=" + (done + 1));
         int next = done + 1;
@@ -203,7 +207,7 @@ public final class OHealthNotificationAccessHook {
     }
 
     private static void rebind(Context context) {
-        if (context == null || !granted(context)) return;
+        if (context == null || !OHealthDeviceHook.nativeControls() || !granted(context)) return;
         ComponentName component = new ComponentName("com.heytap.health", LISTENER);
         try {
             PackageManager packages = context.getPackageManager();

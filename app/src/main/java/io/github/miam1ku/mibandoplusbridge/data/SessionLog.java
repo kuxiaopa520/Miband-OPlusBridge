@@ -80,6 +80,12 @@ public final class SessionLog {
         text.append("current-state mode=").append(owner.mode())
                 .append(" registered=").append(new BandStateRepository(context).isRegistered())
                 .append(" coexistReady=").append(owner.coexistReady()).append('\n');
+        LocalPrefs history = LocalPrefs.open(context, "mi-history-import");
+        text.append("history-import status=").append(history.getString("status", "MI_HISTORY_NOT_STARTED"))
+                .append(" active=").append(history.getBoolean("active", false))
+                .append(" rows=").append(history.getLong("rows", 0)).append(" sleep=").append(history.getLong("sleepRows", 0))
+                .append(" added=").append(history.getLong("added", 0)).append(" skipped=").append(history.getLong("skipped", 0))
+                .append(" lastSkip=").append(redact(history.getString("lastSkip", ""))).append('\n');
         File live = new File(context.getNoBackupFilesDir(), "live-status.txt");
         if (live.isFile() && live.length() < 512) {
             text.append("last-direct-status ").append(new String(Files.readAllBytes(live.toPath()), StandardCharsets.UTF_8).trim()).append('\n');

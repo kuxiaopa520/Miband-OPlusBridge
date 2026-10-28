@@ -1,0 +1,97 @@
+{
+  "extends": "coexist-hosts.json",
+  "oppo": {
+    "version": "6.10.12_5de1312_261026",
+    "sha256": "6e22e463e4c531c3f0f25757f2d1a64293f06e51ea9086a7504bb1cd70640905",
+    "removeClasses": [
+      "com.oplus.drs.core.db.service.CapacityGovernor",
+      "com.heytap.health.base.base.GlobalApplicationHolder",
+      "com.heytap.device.data.storage.DataRepositoryHelper",
+      "com.heytap.device.data.storage.DataRepositoryHelper$Companion",
+      "com.heytap.device.data.storage.SyncObserver",
+      "com.heytap.health.network.core.AutoDisposeObserver"
+    ],
+    "classes": {
+      "com.heytap.health.base.sp.k0": ["j()Lcom/heytap/health/base/sp/k0;", "p(Ljava/lang/String;)Ljava/lang/String;"],
+      "com.heytap.databaseengine.api.SportHealthDataAPI": ["getInstance()Lcom/heytap/databaseengine/api/ISportHealthDataAPI;"],
+      "io.reactivex.rxjava3.disposables.Disposable": ["dispose()V"],
+      "com.heytap.databaseengine.option.DataDeleteOption": [
+        "<init>()V", "getDataTable()I", "getSsoid()Ljava/lang/String;", "getDeviceUniqueId()Ljava/lang/String;",
+        "getStartTime()J", "getEndTime()J", "setSsoid(Ljava/lang/String;)V", "setDeviceUniqueId(Ljava/lang/String;)V",
+        "setDataTable(I)V", "setStartTime(J)V", "setEndTime(J)V", "setSportMode(I)V"
+      ],
+      "androidx.room.RoomDatabase": ["getOpenHelper()Landroidx/sqlite/db/SupportSQLiteOpenHelper;"],
+      "androidx.sqlite.db.SupportSQLiteOpenHelper": ["getWritableDatabase()Landroidx/sqlite/db/SupportSQLiteDatabase;"],
+      "androidx.sqlite.db.SupportSQLiteDatabase": ["execSQL(Ljava/lang/String;[Ljava/lang/Object;)V"],
+      "com.heytap.databaseengine.api.ISportHealthDataAPI": [
+        "readSportHealthData(Lcom/heytap/databaseengine/option/DataReadOption;)Lio/reactivex/rxjava3/core/Observable;",
+        "insertSportHealthData(Lcom/heytap/databaseengine/option/DataInsertOption;)Lio/reactivex/rxjava3/core/Observable;",
+        "deleteSportHealthData(Lcom/heytap/databaseengine/option/DataDeleteOption;)Lio/reactivex/rxjava3/core/Observable;"
+      ],
+      "com.heytap.health.device.tab.controller.DeviceTabAdapterController": [
+        "K(Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V",
+        "J(Ldq/e;)V",
+        "l(Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;)Z",
+        "C(Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;Ljava/lang/String;)V",
+        "f()Ljava/util/List;"
+      ],
+      "com.heytap.health.devicemanager.client.impl.c": [
+        "getBoundDeviceInfos()Ljava/util/List;",
+        "getBoundDeviceInfoByMac(Ljava/lang/String;)Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;",
+        "getCurrActiveMac()Ljava/lang/String;",
+        "connectDeviceByMac(Lcom/heytap/health/devicemanager/client/params/ConnectParams;)V",
+        "r(Lft/a;)Ljava/lang/String;"
+      ],
+      "com.heytap.health.devicemanager.processor.bean.UserDeviceInfo": [
+        "<init>()V", "isCurrTerminal()Z", "getMac()Ljava/lang/String;",
+        "getDeviceUniqueId()Ljava/lang/String;", "setMac(Ljava/lang/String;)V", "setBleMac(Ljava/lang/String;)V",
+        "setDeviceUniqueId(Ljava/lang/String;)V", "setModel(Ljava/lang/String;)V", "setDeviceType(I)V",
+        "setManufacturer(Ljava/lang/String;)V", "setDeviceName(Ljava/lang/String;)V", "setCapacityPercent(I)V",
+        "setConnectionState(I)V", "setChargeStatus(I)V", "setFirmwareVersion(Ljava/lang/String;)V", "setBindingTime(J)V"
+      ],
+      "xs.l": [],
+      "fs.z": [],
+      "com.heytap.databaseengine.apiv2.c": [],
+      "com.heytap.databaseengineservice.db.AppDatabase": ["G(Landroid/content/Context;)Lcom/heytap/databaseengineservice/db/AppDatabase;"],
+      "com.heytap.databaseengineservice.store.k": ["a(Lcom/heytap/databaseengine/option/DataDeleteOption;)I"],
+      "com.heytap.databaseengineservice.store.stat.SleepStatProcess": [
+        "getUpdateData(JJLcom/heytap/databaseengineservice/db/table/DBSleepDataStat;Lcom/heytap/databaseengineservice/db/table/DBSleepDataStat;Z)J"
+      ],
+      "com.heytap.databaseengine.model.SleepIndex": [
+        "<init>()V", "setSsoid(Ljava/lang/String;)V", "setDeviceUniqueId(Ljava/lang/String;)V",
+        "setDataTimestamp(J)V", "setAvgSleepSpo2(Ljava/lang/Integer;)V", "setAvgSleepHeartRate(Ljava/lang/Integer;)V",
+        "setSleepHeartRateRangeLow(Ljava/lang/Integer;)V", "setSleepHeartRateRangeHigh(Ljava/lang/Integer;)V", "setHasHeartRateWarning(I)V"
+      ],
+      "com.heytap.databaseengine.model.newsleep.SleepHeartRateStat": [
+        "<init>()V", "setSsoid(Ljava/lang/String;)V", "setDate(I)V", "setMinHeartRate(I)V", "setMaxHeartRate(I)V",
+        "setReasonableRangeLow(I)V", "setReasonableRangeHigh(I)V", "setAvgSleepHeartRate(I)V", "setWarningNumber(I)V", "getDate()I"
+      ],
+      "com.heytap.databaseengine.model.sleepdaystat.SleepDayStat": [
+        "<init>(Ljava/lang/String;Ljava/lang/String;IJJIIIIIIZILcom/heytap/databaseengine/model/sleepdaystat/SleepMainData;Ljava/util/List;IIIJJ)V",
+        "setSsoid(Ljava/lang/String;)V", "setDeviceUniqueId(Ljava/lang/String;)V", "setDate(I)V", "setSleepInTime(J)V",
+        "setSleepOutTime(J)V", "setTotalSleepTime(I)V", "setTotalDeepSleepTime(I)V", "setTotalLightlySleepTime(I)V",
+        "setTotalREMSleepTime(I)V", "setTotalWakeTime(I)V", "setWakeCount(I)V",
+        "setSleepMainData(Lcom/heytap/databaseengine/model/sleepdaystat/SleepMainData;)V"
+      ],
+      "com.heytap.databaseengine.model.sleepdaystat.SleepMainData": [
+        "<init>()V", "setTotalSleepTime(I)V", "setTotalDeepSleepTime(I)V", "setTotalLightlySleepTime(I)V",
+        "setTotalREMSleepTime(I)V", "setTotalWakeTime(I)V", "setWakeCount(I)V", "setSleepUnitDataList(Ljava/util/List;)V", "setSource(I)V"
+      ],
+      "com.heytap.databaseengine.model.sleepdaystat.SleepDayFrgData": [
+        "<init>(Ljava/lang/String;Ljava/lang/String;IJJIIIIIILjava/lang/Integer;Ljava/util/List;I)V",
+        "setSsoid(Ljava/lang/String;)V", "setDeviceUniqueId(Ljava/lang/String;)V", "setDate(I)V", "setSleepInTime(J)V",
+        "setSleepOutTime(J)V", "setTotalSleepTime(I)V", "setTotalDeepSleepTime(I)V", "setTotalLightlySleepTime(I)V",
+        "setTotalREMSleepTime(I)V", "setTotalWakeTime(I)V", "setWakeCount(I)V"
+      ],
+      "com.heytap.databaseengine.model.sleepdaystat.SleepPiece": [
+        "<init>(Ljava/lang/String;Ljava/lang/String;JJIZ)V"
+      ]
+    },
+    "fields": {
+      "xs.l": ["managerApi:Lys/e;"],
+      "fs.z": ["u0:Lkotlin/Lazy;"],
+      "com.heytap.health.device.tab.controller.DeviceTabAdapterController": ["v:Ljava/util/ArrayList;"],
+      "com.heytap.databaseengine.apiv2.c": ["a:Landroid/content/Context;"]
+    }
+  }
+}

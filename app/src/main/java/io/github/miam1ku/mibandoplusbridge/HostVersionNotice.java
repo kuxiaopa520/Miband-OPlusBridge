@@ -10,7 +10,7 @@ public final class HostVersionNotice {
 
     public static final List<Expectation> EXPECTATIONS = List.of(
             new Expectation("OPPO 健康", HostIdentity.HEALTH_PACKAGE,
-                    "6.1.18、6.9.37、6.9.40；6.7.17 已核对静态接口，待真机验证"),
+                    "6.1.18、6.9.37、6.9.40；6.7.17、6.10.12 共存数据接口已核对，待真机验证"),
             new Expectation("设备空间", HostIdentity.DEVICES_PACKAGE, "17.4.10 或 17.25"),
             new Expectation("小米运动健康", HostIdentity.MI_PACKAGE, "3.59.1"));
 
@@ -24,12 +24,26 @@ public final class HostVersionNotice {
             case HostIdentity.HEALTH_PACKAGE -> versionCode == 6_011_800L || versionCode == 6_093_700L
                     || versionCode == 6_094_000L
                     || (versionCode == 6_071_700L && "6.7.17_a4b586b_260821".equals(name))
+                    || is610Build(name, versionCode)
                     || name.startsWith("6.1.18") || name.startsWith("6.9.37") || name.startsWith("6.9.40");
             case HostIdentity.DEVICES_PACKAGE -> versionCode == 1_704_010L
                     || name.startsWith("17.4.") || name.startsWith("17.25");
             case HostIdentity.MI_PACKAGE -> versionCode == 359_001L || name.startsWith("3.59.1");
             default -> true;
         };
+    }
+
+    public static boolean is610Build(String name, long code) {
+        return code == 6_101_200L && "6.10.12_5de1312_261026".equals(name);
+    }
+
+    public static boolean is610(android.content.Context context) {
+        try {
+            var info = context.getPackageManager().getPackageInfo(HostIdentity.HEALTH_PACKAGE, 0);
+            return is610Build(info.versionName, info.getLongVersionCode());
+        } catch (android.content.pm.PackageManager.NameNotFoundException missing) {
+            return false;
+        }
     }
 
     /** Empty when every installed host matches a verified build. Missing packages are not nags. */

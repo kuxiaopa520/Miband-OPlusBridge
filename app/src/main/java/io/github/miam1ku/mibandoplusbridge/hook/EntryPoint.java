@@ -3,6 +3,7 @@ package io.github.miam1ku.mibandoplusbridge.hook;
 
 import android.app.Application;
 import android.content.Context;
+import android.os.Bundle;
 import androidx.annotation.NonNull;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
@@ -192,6 +193,11 @@ public final class EntryPoint extends XposedModule {
                 probe("MI_MIRROR_HOOK_UNAVAILABLE");
             }
             try {
+                MiFitnessHistoryReader.install(context, load.loader);
+            } catch (Throwable incompatible) {
+                probe("MI_HISTORY_READER_UNAVAILABLE");
+            }
+            try {
                 TransportProbeHook.install(context, load.loader);
             } catch (Throwable incompatible) {
                 probe("TRANSPORT_PROBE_UNAVAILABLE");
@@ -234,6 +240,30 @@ public final class EntryPoint extends XposedModule {
     private static void installHealth(Context context, ClassLoader loader) {
         if (context == null || !healthInstalled.compareAndSet(false, true)) return;
         probe("OHEALTH_HOOKS_BEGIN");
+        if (io.github.miam1ku.mibandoplusbridge.HostVersionNotice.is610(context)) {
+            try {
+                OHealthDeviceHook.install(context, loader);
+                probe("OHEALTH610_DEVICE_HOOK_INSTALLED");
+            } catch (Throwable unavailable) {
+                probe("OHEALTH610_DEVICE_HOOK_UNAVAILABLE " + unavailable.getClass().getSimpleName());
+            }
+            if (Application.getProcessName().endsWith(":SportDaemonService")) {
+                try {
+                    installSleepRowDelete(context, loader);
+                    installSleepStatReplace(loader);
+                    probe("OHEALTH610_SLEEP_STORAGE_HOOK_INSTALLED");
+                } catch (Throwable unavailable) {
+                    probe("OHEALTH610_SLEEP_STORAGE_HOOK_UNAVAILABLE " + unavailable.getClass().getSimpleName());
+                }
+            }
+            try {
+                OHealthHealthImportHook.install(context, loader);
+                probe("OHEALTH610_IMPORT_HOOK_INSTALLED");
+            } catch (Throwable unavailable) {
+                probe("OHEALTH610_IMPORT_HOOK_UNAVAILABLE " + unavailable.getClass().getSimpleName());
+            }
+            return;
+        }
         try {
             OHealthWeatherHook.install(context, loader);
             probe("OHEALTH_WEATHER_HOOK_INSTALLED");
@@ -312,8 +342,10 @@ public final class EntryPoint extends XposedModule {
      * so drop rows by start time. The caller's end is inclusive.
      */
     private static void installSleepRowDelete(Context context, ClassLoader loader) {
-        XposedHelpers.findAndHookMethod("com.heytap.databaseengineservice.store.SportDataStore", loader,
-                "delete", "com.heytap.databaseengine.option.DataDeleteOption", new XC_MethodHook() {
+        boolean modern = io.github.miam1ku.mibandoplusbridge.HostVersionNotice.is610(context);
+        XposedHelpers.findAndHookMethod(modern ? "com.heytap.databaseengineservice.store.k"
+                        : "com.heytap.databaseengineservice.store.SportDataStore", loader,
+                modern ? "a" : "delete", "com.heytap.databaseengine.option.DataDeleteOption", new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                         Object option = param.args[0];
                         if (option == null) return;
@@ -325,9 +357,14 @@ public final class EntryPoint extends XposedModule {
                         long end = (Long) option.getClass().getMethod("getEndTime").invoke(option);
                         if (account == null || account.isBlank() || device == null || device.isBlank()
                                 || end < start) return;
+                        if (modern) {
+                            Bundle band = OHealthDeviceHook.registeredSnapshot();
+                            if (band == null || !io.github.miam1ku.mibandoplusbridge.data.MacIds.same(
+                                    band.getString("mac", ""), device)) return;
+                        }
                         Class<?> dbClass = Class.forName(
                                 "com.heytap.databaseengineservice.db.AppDatabase", false, loader);
-                        Object database = dbClass.getMethod("getInstance", Context.class).invoke(null, context);
+                        Object database = dbClass.getMethod(modern ? "G" : "getInstance", Context.class).invoke(null, context);
                         Object helper = database.getClass().getMethod("getOpenHelper").invoke(database);
                         Object sqlite = helper.getClass().getMethod("getWritableDatabase").invoke(helper);
                         sqlite.getClass().getMethod("execSQL", String.class, Object[].class).invoke(sqlite,

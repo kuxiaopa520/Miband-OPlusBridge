@@ -234,6 +234,19 @@
       ],
       "com.xiaomi.fit.device.extensions.DeviceModelExtKt": [
         "convert(Lcom/xiaomi/fitness/device/manager/export/bean/WearableDeviceInfo;)Lcom/xiaomi/wearable/core/DeviceInfo;"
+      ],
+      "com.xiaomi.fit.fitness.persist.db.FitnessDatabase": [],
+      "com.xiaomi.fit.fitness.persist.db.FitnessDatabase$Companion": [
+        "getInstance()Lcom/xiaomi/fit/fitness/persist/db/FitnessDatabase;"
+      ],
+      "androidx.room.RoomDatabase": [
+        "getOpenHelper()Landroidx/sqlite/db/SupportSQLiteOpenHelper;"
+      ],
+      "androidx.sqlite.db.SupportSQLiteOpenHelper": [
+        "getReadableDatabase()Landroidx/sqlite/db/SupportSQLiteDatabase;"
+      ],
+      "androidx.sqlite.db.SupportSQLiteDatabase": [
+        "getPath()Ljava/lang/String;"
       ]
     }
   }

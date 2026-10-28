@@ -10,16 +10,28 @@ import io.github.miam1ku.mibandoplusbridge.hook.xposed.XposedHelpers;
 
 /** Repair the null application context seen in Health 6.7.17's DRS capacity initializer. */
 final class OHealthDrsHook {
+    private static volatile android.app.Application attachedApplication;
     private OHealthDrsHook() {}
 
     static void install(ClassLoader loader) throws ReflectiveOperationException {
+        XposedHelpers.findAndHookMethod(android.app.Application.class, "attach", Context.class, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (param.thisObject instanceof android.app.Application application
+                        && param.args[0] instanceof Context base && "com.heytap.health".equals(base.getPackageName())) {
+                    attachedApplication = application;
+                }
+            }
+        });
         Class<?> core = Class.forName("com.oplus.drs.core.DrsCore", false, loader);
         // Repair before DrsRuntime caches the application context for capacity and later services.
         XposedBridge.hookMethod(core.getDeclaredMethod("init", Context.class), new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (!(param.args[0] instanceof Context storage) || storage.getApplicationContext() != null) return;
-                Class<?> holder = Class.forName("com.heytap.health.base.base.GlobalApplicationHolder", false, loader);
-                Object known = XposedHelpers.callStaticMethod(holder, "getAppContext");
+                Object known = attachedApplication;
+                if (known == null) {
+                    Class<?> holder = Class.forName("com.heytap.health.base.base.GlobalApplicationHolder", false, loader);
+                    known = XposedHelpers.callStaticMethod(holder, "getAppContext");
+                }
                 if (!(known instanceof android.app.Application application)) return;
                 Context repaired = initializationContext(storage, application);
                 param.args[0] = repaired;

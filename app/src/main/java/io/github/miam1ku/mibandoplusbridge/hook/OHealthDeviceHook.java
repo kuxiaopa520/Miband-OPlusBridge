@@ -44,12 +44,19 @@ public final class OHealthDeviceHook {
 
     private OHealthDeviceHook() {}
     private static Context hostContext;
+    private static boolean modern;
     public static void install(Context context, ClassLoader loader) throws Exception {
         hostContext = context.getApplicationContext();
         // Application.attach runs before ActivityThread publishes the Application instance.
         if (hostContext == null) hostContext = context;
         if (!HOST.equals(context.getPackageName())) return;
         main = HookRuntime.main();
+        modern = io.github.miam1ku.mibandoplusbridge.HostVersionNotice.is610(context);
+        if (modern) {
+            install610(loader);
+            observeSnapshots(loader);
+            return;
+        }
         XposedHelpers.findAndHookMethod(CONTROLLER, loader, "refreshWearableDeviceList",
                 List.class, List.class, String.class, new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
@@ -127,6 +134,99 @@ public final class OHealthDeviceHook {
         installEmptyCloudCleanup(loader);
         installDeviceImage(loader);
         observeSnapshots(loader);
+    }
+
+    /** Exact 6.10.12 controller contract: K(reason, devices, supportedModels), J(event). */
+    private static void install610(ClassLoader loader) throws Exception {
+        Class<?> controller = Class.forName(CONTROLLER, false, loader);
+        for (var constructor : controller.getDeclaredConstructors()) {
+            XposedBridge.hookMethod(constructor, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) { remember(param.thisObject); }
+            });
+        }
+        XposedHelpers.findAndHookMethod(CONTROLLER, loader, "K", String.class, List.class, List.class, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                remember(param.thisObject);
+                Bundle shown = snapshot;
+                if (shown == null || !(param.args[1] instanceof List<?> current)) return;
+                ArrayList<Object> combined = new ArrayList<>();
+                for (Object item : current) if (!matches(item, shown)) combined.add(item);
+                if (shown.getBoolean("registered")) combined.add(deviceInfo(loader, shown));
+                param.args[1] = combined;
+            }
+        });
+        XposedHelpers.findAndHookMethod(CONTROLLER, loader, "J", "dq.e", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                remember(param.thisObject);
+                project(param.thisObject, loader, null, true);
+            }
+        });
+        XposedHelpers.findAndHookMethod(CONTROLLER, loader, "l", INFO, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (isBand(param.args[0])) param.setResult(false);
+            }
+        });
+        XposedHelpers.findAndHookMethod(INFO, loader, "isCurrTerminal", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (isBand(param.thisObject)) param.setResult(true);
+            }
+        });
+        XposedHelpers.findAndHookMethod(CONTROLLER, loader, "C", INFO, String.class, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (!isBand(param.args[0])) return;
+                Intent official = hostContext.getPackageManager().getLaunchIntentForPackage("com.mi.health");
+                if (official != null) hostContext.startActivity(official.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                param.setResult(null);
+            }
+        });
+        Object manager = XposedHelpers.getStaticObjectField(Class.forName("xs.l", false, loader), "managerApi");
+        XC_MethodHook activeMac = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                Bundle shown = display();
+                if (shown != null && (param.getResult() == null || String.valueOf(param.getResult()).isBlank())) {
+                    param.setResult(shown.getString("mac", ""));
+                }
+            }
+        };
+        XposedBridge.hookAllMethods(manager.getClass(), "getCurrActiveMac", activeMac);
+        XposedBridge.hookAllMethods(manager.getClass(), "r", activeMac);
+        XposedHelpers.findAndHookMethod(manager.getClass(), "connectDeviceByMac",
+                "com.heytap.health.devicemanager.client.params.ConnectParams", new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        Bundle shown = display();
+                        if (shown == null || param.args[0] == null) return;
+                        String mac = shown.getString("mac", "");
+                        for (var field : param.args[0].getClass().getDeclaredFields()) {
+                            if (field.getType() != String.class || Modifier.isStatic(field.getModifiers())) continue;
+                            field.setAccessible(true);
+                            try {
+                                if (io.github.miam1ku.mibandoplusbridge.data.MacIds.same(mac, String.valueOf(field.get(param.args[0])))) {
+                                    param.setResult(null);
+                                    return;
+                                }
+                            } catch (IllegalAccessException ignored) { }
+                        }
+                    }
+                });
+        XposedBridge.hookAllMethods(manager.getClass(), "getBoundDeviceInfos", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                Bundle shown = snapshot;
+                if (shown == null) return;
+                ArrayList<Object> combined = new ArrayList<>();
+                if (param.getResult() instanceof List<?> current) {
+                    for (Object item : current) if (!matches(item, shown)) combined.add(item);
+                }
+                if (shown.getBoolean("registered")) combined.add(deviceInfo(loader, shown));
+                param.setResult(combined);
+            }
+        });
+        XposedHelpers.findAndHookMethod(manager.getClass(), "getBoundDeviceInfoByMac", String.class, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                Bundle shown = display();
+                if (shown != null && io.github.miam1ku.mibandoplusbridge.data.MacIds.same(
+                        shown.getString("mac", ""), String.valueOf(param.args[0]))) param.setResult(deviceInfo(loader, shown));
+            }
+        });
     }
 
     /** Replaces the OPPO body and detail picture with the Mi Fitness server image. The face layer stays hidden. */
@@ -283,6 +383,7 @@ public final class OHealthDeviceHook {
 
     /** Writes this band into the account's bound-device list. The list stays after the module stops. */
     public static void rememberBand(ClassLoader loader) {
+        if (modern) return;
         Bundle shown = registeredSnapshot();
         if (shown == null || loader == null) return;
         String mac = shown.getString("mac", "");
@@ -331,15 +432,20 @@ public final class OHealthDeviceHook {
                 Bundle previous = snapshot;
                 if (result != null) {
                     snapshot = result;
+                    if (result.getBoolean("nativeControls") && (previous == null || !previous.getBoolean("nativeControls"))
+                            && "com.heytap.health:transport".equals(android.app.Application.getProcessName())) {
+                        schedulePolicy(500);
+                    }
                 } else if (previous != null) {
                     Bundle offline = new Bundle(previous);
                     offline.putBoolean("connected", false);
+                    offline.putBoolean("nativeControls", false);
                     snapshot = offline;
                 }
                 for (Object controller : liveControllers()) {
                     project(controller, loader, previous, true);
                 }
-                worker.post(() -> dropDuplicateSpaceCard(loader));
+                if (!modern) worker.post(() -> dropDuplicateSpaceCard(loader));
             });
             // The first provider call often races process start. A miss used to leave the device tab empty.
             boolean giveUp = result == null && snapshotAttempts >= 14;
@@ -434,7 +540,19 @@ public final class OHealthDeviceHook {
         try {
             Bundle shown = snapshot;
             if (shown == null) return;
-            if (previous != null && !sameIdentity(previous, shown)) removeListed(controller, previous);
+            if (!modern && previous != null && !sameIdentity(previous, shown)) removeListed(controller, previous);
+            if (modern) {
+                Object raw = XposedHelpers.callMethod(controller, "f");
+                ArrayList<Object> devices = new ArrayList<>();
+                if (raw instanceof List<?> current) {
+                    for (Object item : current) if (!matches(item, shown)) devices.add(item);
+                }
+                if (shown.getBoolean("registered")) devices.add(deviceInfo(loader, shown));
+                Object supported = XposedHelpers.getObjectField(controller, "v");
+                XposedHelpers.callMethod(controller, "K", "band snapshot", devices,
+                        supported instanceof Collection<?> values ? new ArrayList<>(values) : new ArrayList<>());
+                return;
+            }
             if (!shown.getBoolean("registered", false)) {
                 removeListed(controller, shown);
                 return;
@@ -476,6 +594,30 @@ public final class OHealthDeviceHook {
 
 
     private static Object deviceInfo(ClassLoader loader, Bundle display) throws Exception {
+        if (modern) {
+            Object info = XposedHelpers.newInstance(XposedHelpers.findClass(INFO, loader));
+            String mac = display.getString("mac", "");
+            XposedHelpers.callMethod(info, "setMac", mac);
+            XposedHelpers.callMethod(info, "setBleMac", mac);
+            XposedHelpers.callMethod(info, "setDeviceUniqueId", mac);
+            XposedHelpers.callMethod(info, "setModel", "OB19B1");
+            Object types = XposedHelpers.callMethod(XposedHelpers.getStaticObjectField(
+                    Class.forName("fs.z", false, loader), "u0"), "getValue");
+            int type = -1;
+            if (types instanceof Map<?, ?> mapped) {
+                for (var entry : mapped.entrySet()) {
+                    if (entry.getKey() instanceof Number number && containsModel(entry.getValue(), "OB19B1")) {
+                        type = number.intValue();
+                        break;
+                    }
+                }
+            }
+            if (type < 0) throw new IllegalStateException("OHEALTH_BAND_MODEL_UNSUPPORTED");
+            XposedHelpers.callMethod(info, "setDeviceType", type);
+            XposedHelpers.callMethod(info, "setManufacturer", "OPPO");
+            updateInfo(info, display);
+            return info;
+        }
         Class<?> constants = XposedHelpers.findClass(CONSTANTS, loader);
         // Native pages only load for an OPPO band model. The Xiaomi MAC and device id stay real.
         String model = (String) XposedHelpers.getStaticObjectField(constants, "BAND_DEVICE_MODEL");
@@ -1302,6 +1444,12 @@ public final class OHealthDeviceHook {
                     if (!selectedBand(param.thisObject)) return;
                     Object context = XposedHelpers.callMethod(param.thisObject, "getContext");
                     if (!(context instanceof Context launch)) return;
+                    if (menuClass.endsWith("MenuNotificationItem") && !nativeControls()) {
+                        Intent official = launch.getPackageManager().getLaunchIntentForPackage("com.mi.health");
+                        if (official != null) launch.startActivity(official.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        param.setResult(null);
+                        return;
+                    }
                     Intent intent = new Intent().setClassName("com.heytap.health", activityClass);
                     try {
                         Object info = XposedHelpers.callMethod(param.thisObject, "getCurrSelectWearableDevice");
@@ -1407,14 +1555,14 @@ public final class OHealthDeviceHook {
             String manager = "com.heytap.health.watch.notification.impl.transceiver.NotificationEventManager";
             XposedHelpers.findAndHookMethod(manager, loader, "onNotificationPosted", bean, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    if (!registeredBand()) return;
+                    if (!nativeControls()) return;
                     forwardHostNotification(param.args[0], false);
                     param.setResult(null);
                 }
             });
             XposedHelpers.findAndHookMethod(manager, loader, "onNotificationRemoved", bean, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    if (!registeredBand()) return;
+                    if (!nativeControls()) return;
                     forwardHostNotification(param.args[0], true);
                     param.setResult(null);
                 }
@@ -1424,7 +1572,7 @@ public final class OHealthDeviceHook {
                         "com.heytap.health.watch.notification.impl.transceiver.BaseInterceptWorker",
                         loader, "sendInterceptMessage", new XC_MethodHook() {
                             @Override protected void beforeHookedMethod(MethodHookParam param) {
-                                if (registeredBand()) param.setResult(null);
+                                if (nativeControls()) param.setResult(null);
                             }
                         });
             } catch (Throwable failure) {
@@ -1471,8 +1619,14 @@ public final class OHealthDeviceHook {
         return shown != null && shown.getBoolean("registered", false);
     }
 
+    /** Device projection remains active in coexistence; transport controls belong to one app. */
+    static boolean nativeControls() {
+        Bundle shown = snapshot;
+        return shown != null && shown.getBoolean("registered", false) && shown.getBoolean("nativeControls", false);
+    }
+
     private static boolean deferredConnectToast(String text) {
-        if (!registeredBand() || hostContext == null || text == null) return false;
+        if (!nativeControls() || hostContext == null || text == null) return false;
         try {
             int id = hostContext.getResources().getIdentifier(
                     "settings_enable_after_connected", "string", HOST);
@@ -1488,6 +1642,7 @@ public final class OHealthDeviceHook {
      * The event manager's {@code onNotificationPosted} is also hooked before Health's own filter, and that call is then swallowed.
      */
     private static void forwardHostNotification(Object bean, boolean removed) {
+        if (!nativeControls()) return;
         String process = android.app.Application.getProcessName();
         Bundle shown = liveSnapshot();
         if (bean == null || hostContext == null || shown == null || !shown.getBoolean("registered", false)) {
@@ -1523,6 +1678,7 @@ public final class OHealthDeviceHook {
 
     private static void deliverForward(Object bean, boolean removed, String process, String pkg, String key,
             long when, String title, String body) {
+        if (!nativeControls()) return;
         try {
             boolean call = isIncomingCall(bean);
             if (!removed && !call) {
@@ -1792,6 +1948,7 @@ public final class OHealthDeviceHook {
     }
 
     private static void schedulePolicy(long delayMs) {
+        if (!nativeControls()) return;
         policyAttempts.set(0);
         enqueuePolicy(policyGeneration.incrementAndGet(), delayMs);
     }
@@ -1851,6 +2008,7 @@ public final class OHealthDeviceHook {
     }
 
     private static void pushPolicy() {
+        if (!nativeControls()) return;
         int generation = policyGeneration.get();
         if (hostContext == null) {
             if (generation == policyGeneration.get()) retryPolicy("context");

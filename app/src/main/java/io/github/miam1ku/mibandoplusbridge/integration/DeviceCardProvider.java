@@ -262,6 +262,9 @@ public final class DeviceCardProvider extends ContentProvider {
         Bundle display = new Bundle();
         boolean registered = state.getBoolean("registered", false);
         display.putBoolean("registered", registered);
+        var ownership = new io.github.miam1ku.mibandoplusbridge.service.OwnershipController(getContext());
+        display.putString("connectionOwner", ownership.mode());
+        display.putBoolean("nativeControls", registered && ownership.nativeReady());
         display.putString("name", BandCatalog.displayName(
                 state.getString("modelId", ""), state.getString("name", "")));
         display.putString("deviceId", state.getString("deviceId", ""));

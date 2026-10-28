@@ -60,6 +60,7 @@ public final class OHealthMusicHook {
         if (!"com.heytap.health:transport".equals(process)) return;
         HookRuntime.receive(app, new BroadcastReceiver() {
             @Override public void onReceive(Context receiverContext, Intent intent) {
+                if (!OHealthDeviceHook.nativeControls()) return;
                 if (intent == null || !NativeMusic.ACTION.equals(intent.getAction())) return;
                 if (intent.getBooleanExtra("refresh", false)) refresh(loader);
                 else key(loader, intent.getIntExtra("key", -1), intent.getIntExtra("volume", 0));
@@ -83,6 +84,7 @@ public final class OHealthMusicHook {
     }
 
     private static void mirror(String method, Object[] args) {
+        if (!OHealthDeviceHook.nativeControls()) return;
         try {
             if ("sendMusicCloseInfo".equals(method)) {
                 publish(true, 0, Math.max(0, lastVolume), "", "", 0, 0);
@@ -123,6 +125,7 @@ public final class OHealthMusicHook {
 
     private static void publish(boolean force, int state, int volume, String track, String artist,
                                 int position, int duration) {
+        if (!OHealthDeviceHook.nativeControls()) return;
         volume = Math.max(0, Math.min(100, volume));
         boolean same = state == lastState && volume == lastVolume && duration == lastDuration
                 && java.util.Objects.equals(track, lastTrack) && java.util.Objects.equals(artist, lastArtist);

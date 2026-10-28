@@ -25,6 +25,11 @@ public final class HostNotifyProvider extends ContentProvider {
     @Override public Bundle call(String method, String arg, Bundle extras) {
         HostIdentity.requireCaller(getContext(), HostIdentity.HEALTH_PACKAGE);
         if ("trace".equals(method)) return trace(extras);
+        if (!new io.github.miam1ku.mibandoplusbridge.service.OwnershipController(getContext()).nativeReady()) {
+            Bundle result = new Bundle();
+            result.putString("status", "OFFICIAL_CONTROLS_OWNED_BY_MI");
+            return result;
+        }
         if ("policy".equals(method)) return policy(extras);
         if ("policySnapshot".equals(method)) return policySnapshot(extras);
         if ("healthListener".equals(method)) return healthListener(extras);

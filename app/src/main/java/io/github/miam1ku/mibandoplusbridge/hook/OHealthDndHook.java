@@ -20,6 +20,7 @@ public final class OHealthDndHook {
         IntentFilter filter = new IntentFilter(ACTION);
         HookRuntime.receive(context, new BroadcastReceiver() {
             @Override public void onReceive(Context ctx, Intent intent) {
+                if (!OHealthDeviceHook.nativeControls()) return;
                 if (intent == null || !ACTION.equals(intent.getAction()) || !fromBridge(ctx, getSentFromUid())) return;
                 PhoneDnd.Attempt attempt = PhoneDnd.apply(ctx, intent.getBooleanExtra("on", false));
                 if (attempt.applied()) {

@@ -163,7 +163,9 @@ final class OHealthSleepWriter {
                 String reason = heldDay.getMessage();
                 if (reason != null && reason.startsWith("SLEEP_SEGMENT_UNCONFIRMED")) {
                     held++;
-                    HookRuntime.log("OHEALTH_SLEEP_DAY_HELD date=" + day.date() + " " + reason);
+                    String line = "OHEALTH_SLEEP_DAY_HELD date=" + day.date() + " " + reason;
+                    HookRuntime.log(line);
+                    OHealthDeviceHook.traceLine(context, line);
                 } else {
                     failed++;
                     String line = "OHEALTH_SLEEP_DAY_FAILED date=" + day.date() + " reason=" + reason;
@@ -179,8 +181,10 @@ final class OHealthSleepWriter {
                 OHealthDeviceHook.traceLine(context, line);
             }
         }
-        HookRuntime.log("OHEALTH_SLEEP_IMPORT days=" + days.size()
-                + " inserted=" + inserted + " skipped=" + skipped + " held=" + held + " failed=" + failed);
+        String summary = "OHEALTH_SLEEP_IMPORT days=" + days.size()
+                + " inserted=" + inserted + " skipped=" + skipped + " held=" + held + " failed=" + failed;
+        HookRuntime.log(summary);
+        OHealthDeviceHook.traceLine(context, summary);
     }
 
     /** @return null when the day was written; otherwise {@code other-device} or {@code already-ours}. */

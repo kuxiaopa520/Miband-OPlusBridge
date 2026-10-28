@@ -169,6 +169,29 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
         }
     }
 
+    /** Import only missing facts. A DB snapshot never replaces a newer live file or a different account. */
+    public synchronized int importMissing(String accountHash, List<Measurement> measurements) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            if (accountHash == null || !accountHash.equals(requireConfirmedAccount(db))) {
+                throw new SecurityException("MI_HISTORY_ACCOUNT_CHANGED");
+            }
+            int added = 0;
+            for (Measurement measurement : measurements) {
+                try (Cursor current = db.rawQuery("SELECT 1 FROM revisions WHERE account_hash=? AND record_id=?",
+                        new String[]{accountHash, measurement.recordId})) {
+                    if (current.moveToFirst()) continue;
+                }
+                if (enqueue(db, accountHash, measurement).added()) added++;
+            }
+            db.setTransactionSuccessful();
+            return added;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     /** One transaction covers deduplication, history, ledger, replacement outbox and replay cursor. */
     public synchronized EnqueueResult enqueueArchivedMeasurement(String fileHash, int expectedIndex,
             Measurement measurement) {
