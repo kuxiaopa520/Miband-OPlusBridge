@@ -2,6 +2,8 @@
 package io.github.miam1ku.mibandoplusbridge.data;
 
 import android.content.Context;
+import io.github.miam1ku.mibandoplusbridge.BuildConfig;
+import io.github.miam1ku.mibandoplusbridge.service.OwnershipController;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -72,13 +74,26 @@ public final class SessionLog {
         File out = new File(dir, "band-debug.txt");
         StringBuilder text = new StringBuilder();
         text.append("miband-oplusbridge debug\n");
+        text.append("exported-at ").append(Instant.now()).append('\n');
+        text.append("module ").append(BuildConfig.VERSION_NAME).append('/').append(BuildConfig.VERSION_CODE).append('\n');
+        OwnershipController owner = new OwnershipController(context);
+        text.append("current-state mode=").append(owner.mode())
+                .append(" registered=").append(new BandStateRepository(context).isRegistered())
+                .append(" coexistReady=").append(owner.coexistReady()).append('\n');
         File live = new File(context.getNoBackupFilesDir(), "live-status.txt");
         if (live.isFile() && live.length() < 512) {
-            text.append("live-status ").append(new String(Files.readAllBytes(live.toPath()), StandardCharsets.UTF_8).trim()).append('\n');
+            text.append("last-direct-status ").append(new String(Files.readAllBytes(live.toPath()), StandardCharsets.UTF_8).trim()).append('\n');
         }
         File log = logFile(context);
-        if (log.isFile()) text.append(new String(Files.readAllBytes(log.toPath()), StandardCharsets.UTF_8));
-        Files.write(out.toPath(), retain(text.toString()).getBytes(StandardCharsets.UTF_8));
+        if (log.isFile()) text.append(retain(new String(Files.readAllBytes(log.toPath()), StandardCharsets.UTF_8)));
+        text.append("\n--- OPPO Health Android crash buffer ---\n");
+        try {
+            text.append(owner.healthCrashLog());
+        } catch (OwnershipController.Failure unavailable) {
+            text.append(unavailable.code);
+        }
+        text.append('\n');
+        Files.write(out.toPath(), text.toString().getBytes(StandardCharsets.UTF_8));
         return out;
     }
 

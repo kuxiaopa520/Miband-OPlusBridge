@@ -10,6 +10,8 @@ import io.github.miam1ku.mibandoplusbridge.HostIdentity;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -104,6 +106,39 @@ public final class OwnershipController {
             return "0".equals(execute("id -u", 8));
         } catch (Failure ignored) {
             return false;
+        }
+    }
+
+    /** Read only Health's crash buffer. A private file avoids blocking logcat on a full stdout pipe. */
+    public String healthCrashLog() throws Failure {
+        Process process = null;
+        File output = null;
+        try {
+            int uid = context.getPackageManager().getApplicationInfo(HostIdentity.HEALTH_PACKAGE, 0).uid;
+            if (uid < 0) throw new Failure("HEALTH_UID_UNAVAILABLE");
+            output = File.createTempFile("health-crash-", ".txt", context.getCacheDir());
+            String command = "logcat -b crash -d -v threadtime --uid=" + uid + " -t 240";
+            process = new ProcessBuilder("su", "-c", "/system/bin/sh -c " + shellQuote(command))
+                    .redirectErrorStream(true).redirectOutput(output).start();
+            if (!process.waitFor(8, TimeUnit.SECONDS)) {
+                throw new Failure("HEALTH_CRASH_LOG_TIMEOUT");
+            }
+            if (process.exitValue() != 0) throw new Failure("HEALTH_CRASH_LOG_UNAVAILABLE");
+            try (InputStream input = new FileInputStream(output)) {
+                String trace = readLimited(input, 128 * 1024).trim();
+                boolean hasRows = trace.lines().anyMatch(line -> !line.isBlank() && !line.startsWith("---------"));
+                return hasRows ? trace : "HEALTH_CRASH_BUFFER_EMPTY";
+            }
+        } catch (PackageManager.NameNotFoundException absent) {
+            throw new Failure("HEALTH_APP_MISSING");
+        } catch (IOException | SecurityException failure) {
+            throw new Failure("HEALTH_CRASH_LOG_UNAVAILABLE");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new Failure("HEALTH_CRASH_LOG_INTERRUPTED");
+        } finally {
+            if (process != null) process.destroyForcibly();
+            if (output != null) output.delete();
         }
     }
 

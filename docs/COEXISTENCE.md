@@ -1,6 +1,6 @@
 # 小米手环 10 与 OPPO 健康共存
 
-本 Fork 基于上游提交 `1ccdda52ec959587c698926e79b73236103c235f`，版本为 `1.8.7-coexist.1`。
+本 Fork 基于上游提交 `1ccdda52ec959587c698926e79b73236103c235f`。当前版本 `1.8.7-coexist.2` 增加 OPPO 健康闪退日志导出；共存实现与 `coexist.1` 相同，闪退根因仍待设备崩溃记录确认。
 
 ## 能做到什么
 
@@ -73,7 +73,7 @@ python scripts/check_host_apks.py --oppo 'F:/Downloads/OPPO 健康.apk' --mi 'F:
 
 检查清单见 `compat/coexist-hosts.json`，实际静态结果见 `compat/coexist-verification.json`。这些文件中的 `runtimeVerified` 保持 `false`；类和方法存在不等于实际连接或写入成功。
 
-本次核对结果：OPPO 健康 22 个类、143 个方法契约通过，小米运动健康 6 个类、15 个方法契约通过。项目全部 360 项 JVM 单元测试通过，上游复用目标检查通过。完整 `lintRelease` 报出 24 个错误和 45 个警告；24 个错误的源码位置均可在上游原代码中找到，主要为权限标注问题，本次未顺便修改。普通 Release 构建及其 `lintVitalRelease` 可完成；完整 Lint 不能记为通过。
+共存首版核对结果：OPPO 健康 22 个类、143 个方法契约通过，小米运动健康 6 个类、15 个方法契约通过。首版全部 360 项 JVM 单元测试通过，上游复用目标检查通过。完整 `lintRelease` 报出 24 个错误和 45 个警告；24 个错误的源码位置均可在上游原代码中找到，主要为权限标注问题，本次未顺便修改。普通 Release 构建及其 `lintVitalRelease` 可完成；完整 Lint 不能记为通过。`coexist.2` 另运行日志导出、Shell 引号和有界读取相关的 10 项测试，全部通过；OPPO 的实际闪退仍待设备堆栈定位。
 
 构建使用上游 Gradle 项目和签名变量：`OPLUSBAND_KEYSTORE`、`OPLUSBAND_STORE_PASSWORD`、`OPLUSBAND_KEY_ALIAS`、`OPLUSBAND_KEY_PASSWORD`。Fork 的签名私钥只保存在本机忽略目录，未提交到 GitHub。
 
@@ -84,3 +84,11 @@ python scripts/check_host_apks.py --oppo 'F:/Downloads/OPPO 健康.apk' --mi 'F:
 单独生成安装包可运行 `:app:testDebugUnitTest :app:assembleRelease`；此命令仍运行构建自带的 `lintVitalRelease`，但不代表完整 `lintRelease` 通过。
 
 真机验收还需要确认：框架实际加载共存 hook、小米保持启用和连接、OPPO 账号下真实新增步数/心率/睡眠、重启后的持续同步以及设备页展示。调试日志中的 `MI_MIRROR_HOOK_INSTALLED`、`mirror file PARSED` 可帮助定位接收阶段；OPPO 展示仍须实际核对。
+
+## OPPO 健康点开闪退时
+
+`mirror file PARSED` 只能说明健康文件到达桥接，不能证明 OPPO 页面正常启动或已完成数据写入。旧导出里的 `live-status` 是独占连接服务最后保存的状态，也可能早于当前共存会话。
+
+`coexist.2` 的日志头会重新读取当前所有权、登记状态和模块版本；旧服务状态标为 `last-direct-status`。导出末尾新增 `OPPO Health Android crash buffer`，通过已授予的 Root 权限读取 OPPO 健康 UID 的 Android crash buffer，最多 240 行、128 KiB。读取有 8 秒超时，临时文件保存在模块私有缓存并在读取后删除。导出不会清除崩溃缓冲区、健康 App 数据或账号。
+
+收集方法：覆盖安装 `coexist.2` → 再打开 OPPO 健康复现闪退 → 回到桥接的「帮助 → 发送调试日志」。如果末尾显示 `HEALTH_CRASH_BUFFER_EMPTY`，说明这次读取没有取得崩溃行；`HEALTH_CRASH_LOG_UNAVAILABLE` 则表示日志读取未完成。此时需要框架日志或 ADB 崩溃记录，不能仅根据镜像接收日志判定原因。
