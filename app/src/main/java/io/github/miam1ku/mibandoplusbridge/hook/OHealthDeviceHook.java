@@ -53,8 +53,8 @@ public final class OHealthDeviceHook {
         main = HookRuntime.main();
         modern = io.github.miam1ku.mibandoplusbridge.HostVersionNotice.is610(context);
         if (modern) {
-            install610(loader);
             observeSnapshots(loader);
+            install610(loader);
             return;
         }
         XposedHelpers.findAndHookMethod(CONTROLLER, loader, "refreshWearableDeviceList",
@@ -174,9 +174,8 @@ public final class OHealthDeviceHook {
         XposedHelpers.findAndHookMethod(CONTROLLER, loader, "C", INFO, String.class, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) {
                 if (!isBand(param.args[0])) return;
-                Intent official = hostContext.getPackageManager().getLaunchIntentForPackage("com.mi.health");
-                if (official != null) hostContext.startActivity(official.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 param.setResult(null);
+                requestSync();
             }
         });
         Object manager = XposedHelpers.getStaticObjectField(Class.forName("xs.l", false, loader), "managerApi");
@@ -227,6 +226,96 @@ public final class OHealthDeviceHook {
                         shown.getString("mac", ""), String.valueOf(param.args[0]))) param.setResult(deviceInfo(loader, shown));
             }
         });
+        for (String name : List.of("h0", "r0", "c0", "s0", "s", "p0")) {
+            String itemClass = WEARABLE_ITEM + name;
+            XposedHelpers.findAndHookMethod(itemClass, loader, "J", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    Object controller = XposedHelpers.getObjectField(param.thisObject, "i");
+                    Object selected = XposedHelpers.callMethod(controller, "k");
+                    if (!isBand(selected)) return;
+                    Object supplied = XposedHelpers.callMethod(controller, "getContext");
+                    if (!(supplied instanceof Context launch)) return;
+                    Intent history = historyIntent610(name, String.valueOf(XposedHelpers.callMethod(selected, "getMac")));
+                    if (!(launch instanceof android.app.Activity)) history.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    launch.startActivity(history);
+                    param.setResult(null);
+                }
+            });
+        }
+        HookRuntime.tryHook("OHEALTH_PANEL_610_UNAVAILABLE", () -> installNativePanel610(loader));
+    }
+
+    private static void installNativePanel610(ClassLoader loader) {
+        String viewModel = "com.heytap.health.linkage.ui.DeviceDetailsViewModel";
+        XposedHelpers.findAndHookMethod(viewModel, loader, "u", String.class, boolean.class, boolean.class,
+                new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        applyPanelState610(param.thisObject);
+                    }
+                });
+        XposedHelpers.findAndHookMethod(viewModel, loader, "w", int.class, String.class, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (applyPanelState610(param.thisObject) && ourMac(param.args[1])) {
+                    param.args[0] = XposedHelpers.getIntField(param.thisObject, "t");
+                }
+            }
+        });
+        XposedHelpers.findAndHookMethod("com.oplus.mydevices.sdk.DeviceInfoManager", loader,
+                "queryDeviceById", String.class, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        Bundle shown = liveSnapshot();
+                        if (shown == null) return;
+                        String id = String.valueOf(param.args[0]);
+                        if (!id.equals(shown.getString("deviceId"))
+                                && !id.equals(healthCardId(shown.getString("mac", "")))) return;
+                        Object info = param.getResult();
+                        if (info == null) {
+                            Object builder = XposedHelpers.newInstance(XposedHelpers.findClass(
+                                    "com.oplus.mydevices.sdk.device.DeviceInfo$Builder", loader));
+                            XposedHelpers.callMethod(builder, "deviceId", id);
+                            XposedHelpers.callMethod(builder, "deviceName", shown.getString("name", "小米手环"));
+                            XposedHelpers.callMethod(builder, "mac", shown.getString("mac", ""));
+                            XposedHelpers.callMethod(builder, "modelId",
+                                    io.github.miam1ku.mibandoplusbridge.integration.NativePanel.BAND_MODEL);
+                            info = XposedHelpers.callMethod(builder, "build");
+                        }
+                        patchSdkDevice(info, shown);
+                        param.setResult(info);
+                    }
+                });
+    }
+
+    /** 6.10.12 renamed the native panel fields; only the selected bridge band is projected. */
+    static boolean applyPanelState610(Object vm) {
+        Bundle shown = liveSnapshot();
+        if (shown == null) return false;
+        Object mac = XposedHelpers.getObjectField(vm, "m");
+        Object id = XposedHelpers.getObjectField(vm, "l");
+        if (!shown.getString("deviceId", "").equals(id)
+                && !io.github.miam1ku.mibandoplusbridge.data.MacIds.same(
+                        shown.getString("mac", ""), String.valueOf(mac))) return false;
+        int battery = shown.getInt("battery", -1);
+        XposedHelpers.setIntField(vm, "y", battery >= 0 && battery <= 100 ? battery : 0);
+        XposedHelpers.setBooleanField(vm, "z", shown.getBoolean("charging"));
+        XposedHelpers.setIntField(vm, "t", shown.getBoolean("connected") ? 102 : 103);
+        XposedHelpers.callMethod(XposedHelpers.getObjectField(vm, "q"), "postValue", shown.getBoolean("connected"));
+        return true;
+    }
+
+    static Intent historyIntent610(String item, String mac) {
+        String activity = switch (item) {
+            case "h0" -> "com.heytap.health.heartrate.ui.HeartRateHistoryActivity";
+            case "r0" -> "com.heytap.health.sleep.SleepHistoryActivity";
+            case "c0" -> "com.heytap.health.daily.ui.DailyActivityDetailActivity";
+            case "s0" -> "com.heytap.sports.record.list.SportRecordListActivity";
+            case "s" -> "com.heytap.health.bloodoxygen.ui.BloodOxygenHistoryActivity";
+            case "p0" -> "com.heytap.health.stress.ui.StressHistoryActivity";
+            default -> throw new IllegalArgumentException("OHEALTH_HISTORY_MENU_UNSUPPORTED");
+        };
+        Bundle device = new Bundle();
+        device.putString("settingsDeviceMac", mac);
+        return new Intent().setClassName(HOST, activity).putExtra("settingsDeviceMac", mac)
+                .putExtra("settingsDeviceMacBundle", device);
     }
 
     /** Replaces the OPPO body and detail picture with the Mi Fitness server image. The face layer stays hidden. */
@@ -366,6 +455,13 @@ public final class OHealthDeviceHook {
     public static Bundle registeredSnapshot() {
         Bundle shown = display();
         return shown == null ? null : new Bundle(shown);
+    }
+
+    /** The import worker can start before the main-thread UI projection has received its snapshot. */
+    static Bundle refreshForImport() {
+        Bundle fresh = fromProvider();
+        if (fresh != null) snapshot = fresh;
+        return fresh != null && fresh.getBoolean("registered", false) ? new Bundle(fresh) : null;
     }
 
     /**

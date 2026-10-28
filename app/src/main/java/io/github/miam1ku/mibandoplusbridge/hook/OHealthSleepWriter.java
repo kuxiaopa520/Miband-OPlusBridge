@@ -42,6 +42,7 @@ final class OHealthSleepWriter {
     private final Method statGetDevice, statGetDate, statGetFall, statGetWake, statGetSleep,
             statGetDeep, statGetLight, statGetRem, statGetAwake;
     private final Method breathAccount, breathDevice, breathDeviceType, breathTime, breathValue, breathConfig;
+    private String importedVersion;
 
     OHealthSleepWriter(OHealthHealthImportHook.HostContract host) throws ReflectiveOperationException {
         this.host = host;
@@ -134,13 +135,22 @@ final class OHealthSleepWriter {
         }
         String queued = band.getString("deviceId", "");
         String device = OHealthDeviceHook.healthId(queued);
-        List<HealthRecord> records = history(context, account, queued);
+        Bundle versionRequest = new Bundle();
+        versionRequest.putString("account", account);
+        versionRequest.putString("deviceId", queued);
+        Bundle versionReply = context.getContentResolver().call(HealthQueueProvider.URI, "sleepVersion", null, versionRequest);
+        String version = versionReply == null ? null : versionReply.getString("version");
         ZoneId zone = ZoneId.systemDefault();
+        String key = version == null ? null : account + ":" + queued + ":" + device + ":" + zone.getId() + ":" + version;
+        if (key != null && key.equals(importedVersion)) return;
+        List<HealthRecord> records = history(context, account, queued);
         HookRuntime.log("OHEALTH_SLEEP_ZONE " + zone.getId());
         List<OHealthSleepPlan.Night> nights = OHealthSleepPlan.nights(records, zone);
-        if (nights.isEmpty()) return;
+        if (nights.isEmpty()) { importedVersion = key; return; }
         List<OHealthSleepPlan.Day> days = OHealthSleepPlan.days(nights);
         if (days.isEmpty()) return;
+        days = new ArrayList<>(days);
+        days.sort(Comparator.comparingInt(OHealthSleepPlan.Day::date).reversed());
         HookRuntime.log("OHEALTH_SLEEP_BEGIN days=" + days.size() + " nights=" + nights.size());
         int inserted = 0;
         int skipped = 0;
@@ -180,11 +190,26 @@ final class OHealthSleepWriter {
                 HookRuntime.log(line);
                 OHealthDeviceHook.traceLine(context, line);
             }
+            if ((inserted + skipped + held + failed) % 10 == 0) reportProgress(context, account,
+                    inserted + skipped, days.size());
         }
         String summary = "OHEALTH_SLEEP_IMPORT days=" + days.size()
                 + " inserted=" + inserted + " skipped=" + skipped + " held=" + held + " failed=" + failed;
         HookRuntime.log(summary);
         OHealthDeviceHook.traceLine(context, summary);
+        reportProgress(context, account, inserted + skipped, days.size());
+        if (held == 0 && failed == 0) importedVersion = key;
+        else throw new IllegalStateException("SLEEP_IMPORT_INCOMPLETE");
+    }
+
+    private static void reportProgress(Context context, String account, int done, int total) {
+        Bundle progress = new Bundle();
+        progress.putString("account", account);
+        progress.putString("phase", "SLEEP");
+        progress.putInt("sleepDone", done);
+        progress.putInt("sleepTotal", total);
+        try { context.getContentResolver().call(HealthQueueProvider.URI, "importProgress", null, progress); }
+        catch (RuntimeException ignored) { }
     }
 
     /** @return null when the day was written; otherwise {@code other-device} or {@code already-ours}. */
@@ -222,6 +247,7 @@ final class OHealthSleepWriter {
                 : day.nights().stream().max(Comparator.comparingLong(OHealthSleepPlan.Night::sleepMinutes)).orElse(null);
 
         boolean anyUpdated = false;
+        boolean derivedFailed = false;
         for (OHealthSleepPlan.Night night : day.nights()) {
             boolean segmentsUpdated = writeSessionSegments(api, account, device, night);
             if (segmentsUpdated) anyUpdated = true;
@@ -238,6 +264,7 @@ final class OHealthSleepWriter {
                         anyUpdated = true;
                     }
                 } catch (Exception derivedFailure) {
+                    derivedFailed = true;
                     HookRuntime.log("OHEALTH_SLEEP_DERIVED_FAILED date=" + day.date()
                             + " " + derivedFailure);
                 }
@@ -262,17 +289,20 @@ final class OHealthSleepWriter {
                     List<?> writtenDay = host.readRows(api, account, OHealthSleepDerivedWriter.TABLE_DAY_STAT,
                             null, statStart, statEnd, 0, false);
                     if (!derived.dayStatMatches(writtenDay, device, previous, day)) {
+                        derivedFailed = true;
                         HookRuntime.log("OHEALTH_SLEEP_DAY_STAT_UNCONFIRMED date=" + day.date()
                                 + " rows=" + (writtenDay == null ? 0 : writtenDay.size()));
                     }
                     anyUpdated = true;
                 }
             } catch (Exception derivedFailure) {
+                derivedFailed = true;
                 HookRuntime.log("OHEALTH_SLEEP_DERIVED_FAILED date=" + day.date()
                         + " " + derivedFailure);
             }
         }
 
+        if (derivedFailed) throw new IllegalStateException("SLEEP_DERIVED_INCOMPLETE");
         if (!anyUpdated) return "already-ours";
         return null;
     }

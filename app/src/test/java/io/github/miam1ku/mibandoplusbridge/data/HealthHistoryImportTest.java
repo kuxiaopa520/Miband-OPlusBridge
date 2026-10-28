@@ -67,4 +67,59 @@ public final class HealthHistoryImportTest {
             assertEquals(2, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
         }
     }
+
+    @Test public void bulkHistoryPreservesEveryMeasurementNearAnAlreadyPopulatedQueue() throws Exception {
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(account);
+            store.getWritableDatabase().execSQL("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<8192) "
+                    + "INSERT INTO records SELECT 'existing-'||x,1,'other',?,'{}',512 FROM n", new Object[]{account});
+            long began = System.nanoTime();
+            var page = new java.util.ArrayList<java.util.List<io.github.miam1ku.mibandoplusbridge.protocol.BandHistoryParser.Measurement>>();
+            for (int i = 0; i < 1024; i++) {
+                page.add(parser.parse("hr_record", "heart_rate", 1700000000L + i * 60L,
+                        "{\"bpm\":62}", 0, "UTC", true));
+                if (page.size() == 256) {
+                    assertEquals(256, store.importHistoryBatch(account, page).consumed());
+                    page.clear();
+                }
+            }
+            System.out.println("HISTORY_IMPORT_1024 elapsedMs=" + (System.nanoTime() - began) / 1_000_000L);
+            assertEquals(1024, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+            assertEquals(9216, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "records"));
+        }
+    }
+
+    @Test public void batchStopsAtAWholeSourceRowAndResumesAfterReceiptsFreeCapacity() throws Exception {
+        var first = parser.parse("hr_record", "heart_rate", 1700000000L, "{\"bpm\":62}", 0, "UTC", true);
+        var second = parser.parse("hr_record", "heart_rate", 1700000060L, "{\"bpm\":63}", 0, "UTC", true);
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(account);
+            store.getWritableDatabase().execSQL("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<32767) "
+                    + "INSERT INTO records SELECT 'existing-'||x,1,'other',?,'{}',10 FROM n", new Object[]{account});
+            var result = store.importHistoryBatch(account, java.util.List.of(first, second));
+            assertTrue(result.full());
+            assertEquals(1, result.consumed());
+            assertEquals(1, result.added());
+            assertEquals(1, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+            store.getWritableDatabase().delete("records", "record_id LIKE 'existing-%'", null);
+            assertEquals(1, store.importHistoryBatch(account, java.util.List.of(second)).consumed());
+            assertEquals(2, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+        }
+    }
+
+    @Test public void bulkReceiptCannotDeleteAnUpdatedRevisionOrAnotherAccountsQueue() throws Exception {
+        var first = parser.parse("hr_record", "heart_rate", 1700000000L, "{\"bpm\":62}", 0, "UTC", true).get(0);
+        var updated = parser.parse("hr_record", "heart_rate", 1700000000L, "{\"bpm\":72}", 0, "UTC", true).get(0);
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(account);
+            store.enqueueMeasurement(first);
+            store.enqueueMeasurement(updated);
+            assertEquals(0, store.acknowledgeBatch("history-account", new String[]{first.recordId}, new int[]{1}));
+            assertThrows(SecurityException.class, () -> store.acknowledgeBatch("wrong-account", new String[]{first.recordId}, new int[]{2}));
+            assertEquals(1, store.count());
+            assertEquals(1, store.acknowledgeBatch("history-account", new String[]{first.recordId}, new int[]{2}));
+            assertEquals(0, store.count());
+            assertEquals(1, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+        }
+    }
 }

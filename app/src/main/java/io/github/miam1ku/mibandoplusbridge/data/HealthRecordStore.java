@@ -171,22 +171,55 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
 
     /** Import only missing facts. A DB snapshot never replaces a newer live file or a different account. */
     public synchronized int importMissing(String accountHash, List<Measurement> measurements) {
+        HistoryBatch result = importHistoryBatch(accountHash, List.of(measurements));
+        if (result.full()) throw new IllegalStateException("HEALTH_OUTBOX_FULL");
+        return result.added();
+    }
+
+    public record HistoryBatch(int consumed, int added, boolean full) {}
+
+    /** One disk transaction and one capacity query per page, retaining whole source rows at the cap. */
+    public synchronized HistoryBatch importHistoryBatch(String accountHash, List<List<Measurement>> sourceRows) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
             if (accountHash == null || !accountHash.equals(requireConfirmedAccount(db))) {
                 throw new SecurityException("MI_HISTORY_ACCOUNT_CHANGED");
             }
-            int added = 0;
-            for (Measurement measurement : measurements) {
-                try (Cursor current = db.rawQuery("SELECT 1 FROM revisions WHERE account_hash=? AND record_id=?",
-                        new String[]{accountHash, measurement.recordId})) {
-                    if (current.moveToFirst()) continue;
+            long[] capacity = new long[2];
+            try (Cursor totals = db.rawQuery("SELECT COUNT(*), COALESCE(SUM(byte_size),0) FROM records", null)) {
+                totals.moveToFirst();
+                capacity[0] = totals.getLong(0);
+                capacity[1] = totals.getLong(1);
+            }
+            int added = 0, consumed = 0;
+            for (List<Measurement> source : sourceRows) {
+                List<Measurement> missing = new ArrayList<>();
+                java.util.HashSet<String> seen = new java.util.HashSet<>();
+                long bytes = 0, points = 0;
+                for (Measurement measurement : source) {
+                    if (!seen.add(measurement.recordId)) continue;
+                    try (Cursor current = db.rawQuery("SELECT 1 FROM revisions WHERE account_hash=? AND record_id=?",
+                            new String[]{accountHash, measurement.recordId})) {
+                        if (current.moveToFirst()) continue;
+                    }
+                    if (isHostKind(measurement.kind)) {
+                        points++;
+                        bytes += measurement.toRecord(1).toJson().toString().getBytes(StandardCharsets.UTF_8).length;
+                    }
+                    missing.add(measurement);
                 }
-                if (enqueue(db, accountHash, measurement).added()) added++;
+                if (points > 0 && (capacity[0] + points > MAX_RECORDS || capacity[1] + bytes > MAX_BYTES)) {
+                    db.setTransactionSuccessful();
+                    return new HistoryBatch(consumed, added, true);
+                }
+                for (Measurement measurement : missing) {
+                    if (enqueue(db, accountHash, measurement, capacity).added()) added++;
+                }
+                consumed++;
             }
             db.setTransactionSuccessful();
-            return added;
+            return new HistoryBatch(consumed, added, false);
         } finally {
             db.endTransaction();
         }
@@ -226,6 +259,10 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
     }
 
     private static EnqueueResult enqueue(SQLiteDatabase db, String account, Measurement measurement) {
+        return enqueue(db, account, measurement, null);
+    }
+
+    private static EnqueueResult enqueue(SQLiteDatabase db, String account, Measurement measurement, long[] capacity) {
         if (measurement == null || measurement.recordId.length() > 256 || measurement.deviceId.length() > 128
                 || !measurement.sourceFingerprint.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("INVALID_HEALTH_MEASUREMENT_KEY");
@@ -251,11 +288,16 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
         // Delete inside the transaction: a failed capacity check restores the previous revision.
         db.delete("records", "account_hash=? AND record_id=?", key);
         if (isHostKind(record.kind)) {
-            try (Cursor totals = db.rawQuery("SELECT COUNT(*), COALESCE(SUM(byte_size), 0) FROM records", null)) {
-                totals.moveToFirst();
-                if (totals.getInt(0) >= MAX_RECORDS || totals.getLong(1) + size > MAX_BYTES) {
-                    throw new IllegalStateException("HEALTH_OUTBOX_FULL");
+            if (capacity == null) {
+                try (Cursor totals = db.rawQuery("SELECT COUNT(*), COALESCE(SUM(byte_size), 0) FROM records", null)) {
+                    totals.moveToFirst();
+                    if (totals.getInt(0) >= MAX_RECORDS || totals.getLong(1) + size > MAX_BYTES) {
+                        throw new IllegalStateException("HEALTH_OUTBOX_FULL");
+                    }
                 }
+            } else {
+                capacity[0]++;
+                capacity[1] += size;
             }
             db.insertOrThrow("records", null, outboxRow(account, record.recordId, revision, record.deviceId, payload, size));
         }
@@ -344,6 +386,31 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
         } finally {
             db.endTransaction();
         }
+    }
+
+    /** Receipts are accepted only for the current account and exactly the confirmed revisions. */
+    public synchronized int acknowledgeBatch(String account, String[] ids, int[] revisions) {
+        if (ids == null || revisions == null || ids.length != revisions.length || ids.length > PAGE_SIZE) {
+            throw new IllegalArgumentException("INVALID_HEALTH_RECEIPT");
+        }
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i] == null || ids[i].isBlank() || ids[i].length() > 256 || revisions[i] < 1) {
+                throw new IllegalArgumentException("INVALID_HEALTH_RECEIPT");
+            }
+        }
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            String hash = hashAccount(account);
+            if (!hash.equals(requireConfirmedAccount(db))) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
+            int removed = 0;
+            for (int i = 0; i < ids.length; i++) {
+                removed += db.delete("records", "account_hash=? AND record_id=? AND revision=?",
+                        new String[]{hash, ids[i], Integer.toString(revisions[i])});
+            }
+            db.setTransactionSuccessful();
+            return removed;
+        } finally { db.endTransaction(); }
     }
     public synchronized int releaseUnsupported(String account, String recordId, int revision) throws JSONException {
         if (!authorizedAccount(account)) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
@@ -476,6 +543,17 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
                 new String[]{account})) {
             cursor.moveToFirst();
             return cursor.getInt(0);
+        }
+    }
+
+    public synchronized String sleepVersion(String account, String device) {
+        String hash = hashAccount(account);
+        if (!hash.equals(confirmedAccountHash())) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
+        try (Cursor rows = getReadableDatabase().rawQuery("SELECT COUNT(*), COALESCE(SUM(revision),0) FROM measurements "
+                + "WHERE account_hash=? AND device_id=? AND kind IN ('sleep_interval','sleep_stage','sleep_breath')",
+                new String[]{hash, device})) {
+            rows.moveToFirst();
+            return rows.getLong(0) + ":" + rows.getLong(1);
         }
     }
 

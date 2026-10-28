@@ -39,7 +39,10 @@ public final class HealthReplay implements AutoCloseable {
     private boolean legacyIndexed;
     private boolean sleepStagesAligned;
     private final ContentObserver observer = new ContentObserver(null) {
-        @Override public void onChange(boolean selfChange) { request(); }
+        @Override public void onChange(boolean selfChange) {
+            // Point receipts and DB-history pages do not require re-reading every raw archive.
+            if (!legacyIndexed || records.confirmedAccountHash() == null || !records.replayFiles(1).isEmpty()) request();
+        }
     };
 
     public HealthReplay(Context context, Consumer<String> status, Runnable capacityChanged) {
@@ -49,6 +52,7 @@ public final class HealthReplay implements AutoCloseable {
         this.status = status;
         this.capacityChanged = capacityChanged;
         this.context.getContentResolver().registerContentObserver(HealthQueueProvider.URI, false, observer);
+        this.context.getContentResolver().registerContentObserver(HealthQueueProvider.CAPACITY_URI, false, observer);
     }
 
     boolean hasCapacity() {

@@ -171,4 +171,44 @@ public final class MiFitnessHistoryImportTest {
         }
         assertEquals("MI_HISTORY_OPEN_OPPO", provider.call("historyStart", null, null).getString("status"));
     }
+
+    @Test public void laterSyncUsesASevenDayOverlapAndFullRescanStillFindsOlderDownloads() {
+        Bundle job = start();
+        long cutoff = job.getLong("cutoff");
+        provider.call("historyPage", null, sleepPage(job));
+        for (int i = 1; i < io.github.miam1ku.mibandoplusbridge.protocol.MiFitnessHistoryParser.TABLES.size(); i++) {
+            Bundle empty = new Bundle(provider.call("historyJob", null, null));
+            empty.putParcelableArrayList("data", new ArrayList<Bundle>());
+            empty.putBoolean("done", true);
+            provider.call("historyPage", null, empty);
+        }
+        assertFalse(provider.call("historyJob", null, null).getBoolean("active"));
+        Bundle incremental = start();
+        assertEquals(Math.max(-1, cutoff - 7 * 86_400L), incremental.getLong("time"));
+        assertNotEquals(job.getString("token"), incremental.getString("token"));
+        assertEquals(incremental.getString("token"), start().getString("token"));
+        ShadowBinder.setCallingUid(Process.myUid());
+        Bundle full = new Bundle(); full.putBoolean("full", true);
+        provider.call("historyStart", null, full);
+        ShadowBinder.setCallingUid(12001);
+        Bundle restarted = provider.call("historyJob", null, null);
+        assertEquals(-1, restarted.getLong("time"));
+        assertNotEquals(incremental.getString("token"), restarted.getString("token"));
+        Bundle repeated = provider.call("historyPage", null, sleepPage(restarted));
+        assertEquals(1, repeated.getLong("sleepRows"));
+        assertEquals(0, repeated.getLong("added"));
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            assertEquals(2, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+        }
+    }
+
+    @Test public void anotherOppoAccountCannotInheritThePreviousAccountsWatermark() {
+        Bundle job = start();
+        provider.call("historyPage", null, sleepPage(job));
+        ShadowBinder.setCallingUid(Process.myUid());
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(HealthRecordStore.hashAccount("other-account"));
+        }
+        assertEquals(-1, start().getLong("time"));
+    }
 }

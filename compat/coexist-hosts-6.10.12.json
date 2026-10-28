@@ -33,8 +33,41 @@
         "J(Ldq/e;)V",
         "l(Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;)Z",
         "C(Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;Ljava/lang/String;)V",
-        "f()Ljava/util/List;"
+        "f()Ljava/util/List;", "k()Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;"
       ],
+      "aq.e": ["getContext()Landroid/content/Context;"],
+      "aq.h": [],
+      "com.heytap.health.device.tab.itemview.wearable.h0": ["J()V"],
+      "com.heytap.health.device.tab.itemview.wearable.r0": ["J()V"],
+      "com.heytap.health.device.tab.itemview.wearable.c0": ["J()V"],
+      "com.heytap.health.device.tab.itemview.wearable.s0": ["J()V"],
+      "com.heytap.health.device.tab.itemview.wearable.s": ["J()V"],
+      "com.heytap.health.device.tab.itemview.wearable.p0": ["J()V"],
+      "com.heytap.health.heartrate.ui.HeartRateHistoryActivity": [],
+      "com.heytap.health.sleep.SleepHistoryActivity": [],
+      "com.heytap.health.daily.ui.DailyActivityDetailActivity": [],
+      "com.heytap.sports.record.list.SportRecordListActivity": [],
+      "com.heytap.health.bloodoxygen.ui.BloodOxygenHistoryActivity": [],
+      "com.heytap.health.stress.ui.StressHistoryActivity": [],
+      "com.heytap.health.linkage.ui.DeviceDetailsPanelActivity": [],
+      "com.heytap.health.linkage.ui.DeviceDetailsViewModel": [
+        "u(Ljava/lang/String;ZZ)Landroidx/lifecycle/MutableLiveData;", "w(ILjava/lang/String;)V"
+      ],
+      "com.oplus.mydevices.sdk.DeviceInfoManager": ["queryDeviceById(Ljava/lang/String;)Lcom/oplus/mydevices/sdk/device/DeviceInfo;"],
+      "com.oplus.mydevices.sdk.device.DeviceInfo$Builder": [
+        "<init>()V", "deviceId(Ljava/lang/String;)Lcom/oplus/mydevices/sdk/device/DeviceInfo$Builder;",
+        "deviceName(Ljava/lang/String;)Lcom/oplus/mydevices/sdk/device/DeviceInfo$Builder;",
+        "mac(Ljava/lang/String;)Lcom/oplus/mydevices/sdk/device/DeviceInfo$Builder;",
+        "modelId(Ljava/lang/String;)Lcom/oplus/mydevices/sdk/device/DeviceInfo$Builder;",
+        "build()Lcom/oplus/mydevices/sdk/device/DeviceInfo;"
+      ],
+      "com.oplus.mydevices.sdk.device.DeviceInfo": [
+        "setConnection(Lcom/oplus/mydevices/sdk/device/Connection;)V", "setBatteryInfoList(Ljava/util/List;)V"
+      ],
+      "com.oplus.mydevices.sdk.device.Connection": ["<init>(Lcom/oplus/mydevices/sdk/device/ConnectState;JJ)V"],
+      "com.oplus.mydevices.sdk.device.ConnectState": [],
+      "com.oplus.mydevices.sdk.device.BatteryInfo": ["<init>(Lcom/oplus/mydevices/sdk/device/BatteryType;IZ)V"],
+      "com.oplus.mydevices.sdk.device.BatteryType": [],
       "com.heytap.health.devicemanager.client.impl.c": [
         "getBoundDeviceInfos()Ljava/util/List;",
         "getBoundDeviceInfoByMac(Ljava/lang/String;)Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;",
@@ -91,7 +124,15 @@
       "xs.l": ["managerApi:Lys/e;"],
       "fs.z": ["u0:Lkotlin/Lazy;"],
       "com.heytap.health.device.tab.controller.DeviceTabAdapterController": ["v:Ljava/util/ArrayList;"],
-      "com.heytap.databaseengine.apiv2.c": ["a:Landroid/content/Context;"]
+      "com.heytap.databaseengine.apiv2.c": ["a:Landroid/content/Context;"],
+      "aq.h": ["i:Lyq/a;"],
+      "com.heytap.health.linkage.ui.DeviceDetailsViewModel": [
+        "l:Ljava/lang/String;", "m:Ljava/lang/String;", "t:I", "y:I", "z:Z", "q:Landroidx/lifecycle/MutableLiveData;"
+      ],
+      "com.oplus.mydevices.sdk.device.ConnectState": [
+        "CONNECTED:Lcom/oplus/mydevices/sdk/device/ConnectState;", "DISCONNECTED:Lcom/oplus/mydevices/sdk/device/ConnectState;"
+      ],
+      "com.oplus.mydevices.sdk.device.BatteryType": ["SINGLE:Lcom/oplus/mydevices/sdk/device/BatteryType;"]
     }
   }
 }

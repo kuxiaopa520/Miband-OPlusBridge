@@ -143,6 +143,7 @@ public final class MainActivity extends AppCompatActivity {
         getContentResolver().registerContentObserver(DeviceCardProvider.URI, false, deviceObserver);
         getContentResolver().registerContentObserver(HealthQueueProvider.URI, false, deviceObserver);
         getContentResolver().registerContentObserver(MiFitnessMirrorProvider.HISTORY_URI, true, historyImportObserver);
+        getContentResolver().registerContentObserver(HealthQueueProvider.PROGRESS_URI, false, historyImportObserver);
         refreshDevice();
         requestRoot();
     }
@@ -216,10 +217,11 @@ public final class MainActivity extends AppCompatActivity {
         });
         screen.caption(links, "共存时在小米运动健康中同步；独占接管时可用「手环」磁贴连接。");
         LinearLayout historyCard = screen.card();
-        historyImport = screen.outlined(historyCard, "补齐小米历史数据", this::startHistoryImport);
+        historyImport = screen.outlined(historyCard, "一键同步到 OPPO 健康", this::startHistoryImport);
+        screen.navRow(historyCard, "重新补齐全部历史", () -> startHistoryImport(true));
         historyProgress = screen.caption(historyCard, "");
-        screen.caption(historyCard, "先在 OPPO 健康登录并打开首页，再点补齐。只读取当前小米账号下这只手环已下载的睡眠、步数、心率、血氧和压力。"
-                + "仅在小米云端的旧记录，请先在小米 App 打开对应日期下载，再补齐一次。");
+        screen.caption(historyCard, "首次补齐本机全部健康历史，之后同步新增和最近七天；中断自动续传。睡眠分期、每分钟心率和步数分别计数。"
+                + "云端旧记录先在小米 App 打开对应日期下载，再点「重新补齐全部历史」。");
 
         LinearLayout sleepCard = screen.card();
         sleepPause = screen.switchRow(sleepCard, "入睡后暂停音乐（独占接管）",
@@ -852,11 +854,17 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void startHistoryImport() {
+        startHistoryImport(false);
+    }
+
+    private void startHistoryImport(boolean full) {
         historyImport.setEnabled(false);
         worker.execute(() -> {
             Bundle result;
             try {
-                result = getContentResolver().call(MiFitnessMirrorProvider.URI, "historyStart", null, null);
+                Bundle request = new Bundle();
+                request.putBoolean("full", full);
+                result = getContentResolver().call(MiFitnessMirrorProvider.URI, "historyStart", null, request);
             } catch (RuntimeException unavailable) {
                 result = new Bundle();
                 result.putString("status", "MI_HISTORY_STORAGE_RETRY");
@@ -866,7 +874,19 @@ public final class MainActivity extends AppCompatActivity {
                 if (isDestroyed()) return;
                 showHistoryImport(reply);
                 historyImport.setEnabled(new OwnershipController(this).coexistReady());
-                if (reply != null && reply.getBoolean("active")) launchMiHealth();
+                if (reply != null && reply.getBoolean("active")) {
+                    Intent oppo = getPackageManager().getLaunchIntentForPackage(HostIdentity.HEALTH_PACKAGE);
+                    Intent mi = getPackageManager().getLaunchIntentForPackage(HostIdentity.MI_PACKAGE);
+                    if (oppo != null && mi != null) {
+                        startActivity(mi);
+                        // A synthetic back stack may defer starting the lower app's process.
+                        main.postDelayed(() -> { if (!isDestroyed()) startActivity(oppo); }, 1000);
+                    } else if (oppo != null) startActivity(oppo);
+                    else launchMiHealth();
+                } else if (reply != null && "MI_HISTORY_OPEN_OPPO".equals(reply.getString("status"))) {
+                    Intent oppo = getPackageManager().getLaunchIntentForPackage(HostIdentity.HEALTH_PACKAGE);
+                    if (oppo != null) startActivity(oppo);
+                }
             });
         });
     }
@@ -885,22 +905,46 @@ public final class MainActivity extends AppCompatActivity {
     private void showHistoryImport(Bundle result) {
         String code = result == null ? "" : result.getString("status", "");
         String text = switch (code) {
-            case "MI_HISTORY_NOT_STARTED" -> "共存模式可补齐以前的记录，睡眠优先。";
+            case "MI_HISTORY_NOT_STARTED" -> "点一次同步，自动打开两家 App 并补齐健康历史。";
             case "MI_HISTORY_OPEN_OPPO", "MI_HISTORY_ACCOUNT_CHANGED" -> "先打开 OPPO 健康，登录并进入首页，再回来点补齐。";
             case "MI_HISTORY_REIMPORT_BINDING", "MI_HISTORY_SOURCE_ACCOUNT_CHANGED" -> "请先重新导入当前小米账号下的手环绑定，再继续补齐。";
             case "MI_HISTORY_WAITING_MI" -> "已排队，请打开小米运动健康并保持运行。";
             case "MI_HISTORY_RUNNING" -> "正在补读历史，保持两个健康 App 运行。";
-            case "MI_HISTORY_OPEN_OPPO_QUEUE_FULL" -> "待写队列已满，请打开 OPPO 健康处理后继续，进度已保留。";
-            case "MI_HISTORY_LOCAL_COMPLETE" -> "本机历史补读完成，请打开 OPPO 健康核对对应日期。";
+            case "MI_HISTORY_OPEN_OPPO_QUEUE_FULL" -> "正在等待 OPPO 写入，队列释放后会自动继续。";
+            case "MI_HISTORY_LOCAL_COMPLETE" -> "小米本机历史已读取，正在核对 OPPO 写入进度。";
             case "MI_MIRROR_INACTIVE", "MI_HISTORY_DEVICE_CHANGED" -> "先保持共存开启并添加这只手环，再补齐。";
             case "MI_HISTORY_SCHEMA_UNSUPPORTED", "MI_HISTORY_DATABASE_UNAVAILABLE", "MI_HISTORY_READ_FAILED" -> "正在等待小米本地历史；保持小米 App 登录，稍后重试。可导出调试日志以便核对。";
             default -> "导入暂缓，进度已保留，可再次点补齐重试。";
         };
         if (result != null && result.containsKey("rows")) {
-            text += "\n已读 " + result.getLong("rows") + " 条，睡眠 " + result.getLong("sleepRows")
-                    + " 段，新增 " + result.getLong("added") + " 条测量，跳过 " + result.getLong("skipped") + " 条。";
+            text += "\n已读健康源记录 " + result.getLong("rows") + " 条，其中睡眠 " + result.getLong("sleepRows")
+                    + " 段；保存测量点 " + result.getLong("added") + " 个，跳过 " + result.getLong("skipped") + " 条。";
+            if (result.getLong("firstMs") > 0 && result.getLong("lastMs") > 0) {
+                var date = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+                text += "\n本轮读取日期：" + date.format(new java.util.Date(result.getLong("firstMs")))
+                        + " 至 " + date.format(new java.util.Date(result.getLong("lastMs"))) + "。";
+            }
             if (result.getLong("skipped") > 0) text += " 部分记录需要补充分期或适配格式，原因已记入调试状态。";
         }
+        try {
+            Bundle host = getContentResolver().call(HealthQueueProvider.URI, "status", null, null);
+            if (host != null) {
+                int pending = host.getInt("pendingPoints");
+                String phase = host.getString("phase", "");
+                String step = switch (phase) {
+                    case "SLEEP" -> "正在写入睡眠";
+                    case "POINTS" -> "正在写入心率、血氧和压力";
+                    case "STEPS" -> "正在写入步数";
+                    case "SPORT" -> "正在写入运动";
+                    case "WAIT_DEVICE" -> "正在获取 OPPO 手环信息";
+                    case "ERROR" -> "OPPO 写入暂缓，将自动重试；可导出日志核对";
+                    case "DONE" -> pending == 0 ? "当前一轮 OPPO 写入已结束" : "等待下一批写入";
+                    default -> "等待 OPPO 启动同步";
+                };
+                text += "\n" + step + "。待写测量点 " + pending + " 个，已确认 " + host.getLong("confirmedPoints") + " 个。";
+                if (host.getInt("sleepTotal") > 0) text += " 睡眠已处理 " + host.getInt("sleepDone") + "/" + host.getInt("sleepTotal") + " 天。";
+            }
+        } catch (RuntimeException ignored) { }
         historyProgress.setText(text);
     }
 

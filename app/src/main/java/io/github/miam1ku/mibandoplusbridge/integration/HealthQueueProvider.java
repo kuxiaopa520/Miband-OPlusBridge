@@ -20,6 +20,8 @@ public final class HealthQueueProvider extends ContentProvider {
     public static final String AUTHORITY = "io.github.miam1ku.mibandoplusbridge.health";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/pending");
     public static final Uri RECORDS_URI = Uri.parse("content://" + AUTHORITY + "/records");
+    public static final Uri CAPACITY_URI = Uri.parse("content://" + AUTHORITY + "/capacity");
+    public static final Uri PROGRESS_URI = Uri.parse("content://" + AUTHORITY + "/import-progress");
     private static final String HOST = "com.heytap.health";
     private static final String[] COLUMNS = {"recordId", "revision", "record"};
     private HealthRecordStore store;
@@ -161,6 +163,16 @@ public final class HealthQueueProvider extends ContentProvider {
             case "status": {
                 requireSelf(self);
                 Bundle result = status(store.accountState());
+                result.putInt("pendingPoints", store.count());
+                var progress = io.github.miam1ku.mibandoplusbridge.data.LocalPrefs.open(getContext(), "health-import-progress");
+                if (java.util.Objects.equals(store.confirmedAccountHash(), progress.getString("accountHash", ""))) {
+                    result.putString("phase", progress.getString("phase", ""));
+                    result.putString("error", progress.getString("error", ""));
+                    result.putLong("confirmedPoints", progress.getLong("confirmedPoints", 0));
+                    result.putInt("sleepDone", progress.getInt("sleepDone", 0));
+                    result.putInt("sleepTotal", progress.getInt("sleepTotal", 0));
+                    result.putLong("updatedAtMs", progress.getLong("updatedAtMs", 0));
+                }
                 if (proposedFingerprint != null
                         && !proposedFingerprint.equals(store.confirmedAccountHash())
                         && SystemClock.elapsedRealtime() - proposedAtMs <= 300_000) {
@@ -170,6 +182,51 @@ public final class HealthQueueProvider extends ContentProvider {
                 }
                 return result;
             }
+            case "importProgress": {
+                if (self || extras == null) throw new SecurityException("OHEALTH_CALLER_REQUIRED");
+                String hash = HealthRecordStore.hashAccount(extras.getString("account"));
+                if (!hash.equals(store.confirmedAccountHash())) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
+                String phase = extras.getString("phase", "");
+                if (!java.util.Set.of("SLEEP", "POINTS", "STEPS", "SPORT", "DONE", "WAIT_DEVICE", "ERROR").contains(phase)) {
+                    throw new IllegalArgumentException("INVALID_HEALTH_PROGRESS");
+                }
+                var progress = io.github.miam1ku.mibandoplusbridge.data.LocalPrefs.open(getContext(), "health-import-progress");
+                var edit = progress.edit();
+                if (!hash.equals(progress.getString("accountHash", ""))) edit.putLong("confirmedPoints", 0);
+                edit.putString("accountHash", hash).putString("phase", phase)
+                        .putString("error", io.github.miam1ku.mibandoplusbridge.data.SessionLog.redact(extras.getString("error", "")))
+                        .putLong("updatedAtMs", System.currentTimeMillis());
+                if (extras.containsKey("sleepDone")) edit.putInt("sleepDone", Math.max(0, extras.getInt("sleepDone")))
+                        .putInt("sleepTotal", Math.max(0, extras.getInt("sleepTotal")));
+                edit.commit();
+                getContext().getContentResolver().notifyChange(PROGRESS_URI, null);
+                return status("HEALTH_PROGRESS_SAVED");
+            }
+            case "sleepVersion": {
+                if (self || extras == null) throw new SecurityException("OHEALTH_CALLER_REQUIRED");
+                Bundle result = status("HEALTH_HISTORY_VERSION");
+                result.putString("version", store.sleepVersion(extras.getString("account"), extras.getString("deviceId")));
+                return result;
+            }
+            case "ackBatch": {
+                if (self || extras == null || !extras.keySet().equals(java.util.Set.of("account", "recordIds", "revisions"))) {
+                    throw new SecurityException("HEALTH_RECEIPT_REQUIRED");
+                }
+                int removed = store.acknowledgeBatch(extras.getString("account"), extras.getStringArray("recordIds"),
+                        extras.getIntArray("revisions"));
+                if (removed > 0) {
+                    var progress = io.github.miam1ku.mibandoplusbridge.data.LocalPrefs.open(getContext(), "health-import-progress");
+                    String hash = HealthRecordStore.hashAccount(extras.getString("account"));
+                    long previous = hash.equals(progress.getString("accountHash", "")) ? progress.getLong("confirmedPoints", 0) : 0;
+                    progress.edit().putString("accountHash", hash).putString("phase", "POINTS")
+                            .putLong("confirmedPoints", previous + removed).putLong("updatedAtMs", System.currentTimeMillis()).commit();
+                    getContext().getContentResolver().notifyChange(CAPACITY_URI, null);
+                    getContext().getContentResolver().notifyChange(PROGRESS_URI, null);
+                }
+                Bundle result = status("HEALTH_ACKNOWLEDGED");
+                result.putInt("acknowledged", removed);
+                return result;
+            }
             case "ack": {
                 if (self) throw new SecurityException("OHEALTH_CALLER_REQUIRED");
                 if (extras == null || !extras.keySet().equals(java.util.Set.of("account", "recordId", "revision"))) {
@@ -177,7 +234,7 @@ public final class HealthQueueProvider extends ContentProvider {
                 }
                 int removed = store.acknowledge(extras.getString("account"), extras.getString("recordId"),
                         extras.getInt("revision", 0));
-                if (removed != 0) notifyRecordsChanged();
+                if (removed != 0) getContext().getContentResolver().notifyChange(CAPACITY_URI, null);
                 Bundle result = status("HEALTH_ACKNOWLEDGED");
                 result.putInt("acknowledged", removed);
                 return result;
@@ -194,7 +251,7 @@ public final class HealthQueueProvider extends ContentProvider {
                 } catch (org.json.JSONException malformed) {
                     throw new IllegalArgumentException("INVALID_HEALTH_RECORD", malformed);
                 }
-                if (removed != 0) notifyRecordsChanged();
+                if (removed != 0) getContext().getContentResolver().notifyChange(CAPACITY_URI, null);
                 Bundle result = status("HEALTH_HOST_UNSUPPORTED");
                 result.putInt("released", removed);
                 return result;

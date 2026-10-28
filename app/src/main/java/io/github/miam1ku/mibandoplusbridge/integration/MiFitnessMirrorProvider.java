@@ -25,15 +25,18 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
     public static final Uri URI = Uri.parse("content://io.github.miam1ku.mibandoplusbridge.mi-mirror");
     public static final int MAX_FRAGMENT_BYTES = 128 * 1024;
     public static final Uri HISTORY_URI = URI.buildUpon().appendPath("history").build();
-    public static final Uri HISTORY_REQUEST_URI = HISTORY_URI.buildUpon().appendPath("request").build();
+    // Sibling paths: Android also delivers notifications on an ancestor to its child observers.
+    public static final Uri HISTORY_REQUEST_URI = URI.buildUpon().appendPath("history-request").build();
     public static final String HISTORY_PREFS = "mi-history-import";
-    public static final int HISTORY_PAGE_SIZE = 64;
+    public static final int HISTORY_PAGE_SIZE = 256;
     public static final int HISTORY_PAGE_CHARS = 192 * 1024;
+    private static final long HISTORY_OVERLAP_SECONDS = 7 * 86_400L;
     private BandHistoryParser parser;
     private String parserDevice = "";
     private String parserFirmware = "";
     private HealthReplay replay;
     private HealthRecordStore historyStore;
+    private long lastHistoryNotice;
 
     @Override public boolean onCreate() {
         historyStore = new HealthRecordStore(getContext());
@@ -59,7 +62,7 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
             if (binding == null || binding.did().isBlank()) return status("MI_MIRROR_DID_REQUIRED");
             if ("historyStart".equals(method)) {
                 if (!self) throw new SecurityException("HISTORY_SELF_REQUIRED");
-                return startHistory(binding);
+                return startHistory(binding, input != null && input.getBoolean("full", false));
             }
             if ("historyJob".equals(method)) return historyJob(binding);
             if (replay == null && !"historyPage".equals(method) && !"historyError".equals(method)) {
@@ -144,20 +147,28 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
         }
     }
 
-    private Bundle startHistory(BindingStore.Identity binding) throws Exception {
+    private Bundle startHistory(BindingStore.Identity binding, boolean full) throws Exception {
         String account = historyStore.confirmedAccountHash();
         if (account == null) return status("MI_HISTORY_OPEN_OPPO");
         String source = new BindingStore(getContext()).read().optString("userId", "");
         if (source.isBlank()) return status("MI_HISTORY_REIMPORT_BINDING");
         LocalPrefs prefs = LocalPrefs.open(getContext(), HISTORY_PREFS);
-        if (!prefs.getBoolean("active", false) || !binding.deviceId().equals(prefs.getString("deviceId", ""))
-                || !account.equals(prefs.getString("accountHash", ""))
-                || !source.equals(prefs.getString("sourceAccount", ""))) {
-            if (!prefs.edit().putBoolean("active", true).putString("token", java.util.UUID.randomUUID().toString())
+        boolean sameIdentity = binding.deviceId().equals(prefs.getString("deviceId", ""))
+                && account.equals(prefs.getString("accountHash", ""))
+                && source.equals(prefs.getString("sourceAccount", ""));
+        if (full || !sameIdentity || !prefs.getBoolean("active", false)) {
+            var edit = prefs.edit();
+            if (full || !sameIdentity) {
+                for (String table : MiFitnessHistoryParser.TABLES) edit.remove("since:" + table);
+            }
+            long since = full || !sameIdentity ? -1
+                    : Math.max(-1, prefs.getLong("since:" + MiFitnessHistoryParser.TABLES.get(0), -1) - HISTORY_OVERLAP_SECONDS);
+            if (!edit.putBoolean("active", true).putString("token", java.util.UUID.randomUUID().toString())
                     .putString("deviceId", binding.deviceId()).putString("accountHash", account)
-                    .putString("sourceAccount", source).putInt("table", 0).putLong("time", -1).putString("key", "")
+                    .putString("sourceAccount", source).putInt("table", 0).putLong("time", since).putString("key", "")
                     .putLong("cutoff", System.currentTimeMillis() / 1000).putLong("rows", 0)
                     .putLong("added", 0).putLong("skipped", 0).putLong("sleepRows", 0)
+                    .putLong("firstMs", 0).putLong("lastMs", 0)
                     .putString("lastSkip", "").putString("status", "MI_HISTORY_WAITING_MI").commit()) {
                 throw new IllegalStateException("MI_HISTORY_PROGRESS_WRITE_FAILED");
             }
@@ -175,6 +186,9 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
             result.putLong(key, prefs.getLong(key, 0));
         }
         result.putString("lastSkip", prefs.getString("lastSkip", ""));
+        result.putInt("pendingPoints", historyStore.count());
+        result.putLong("firstMs", prefs.getLong("firstMs", 0));
+        result.putLong("lastMs", prefs.getLong("lastMs", 0));
         return result;
     }
 
@@ -217,45 +231,72 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
         long skipped = prefs.getLong("skipped", 0), sleep = prefs.getLong("sleepRows", 0);
         String lastSkip = prefs.getString("lastSkip", "");
         String code = "MI_HISTORY_RUNNING";
+        var decoded = new java.util.ArrayList<java.util.List<BandHistoryParser.Measurement>>();
+        var reasons = new java.util.ArrayList<String>();
+        long checkTime = after;
+        String checkKey = afterKey;
         for (Bundle row : rows) {
             long time = row.getLong("time", -1);
             String key = row.getString("key", "");
-            if (time < after || time == after && key.compareTo(afterKey) <= 0 || time > job.getLong("cutoff")) {
+            if (time < checkTime || time == checkTime && key.compareTo(checkKey) <= 0 || time > job.getLong("cutoff")) {
                 throw new SecurityException("MI_HISTORY_CURSOR_INVALID");
             }
             try {
                 var measurements = converter.parse(job.getString("table"), key, time, row.getString("value"),
                         row.getInt("zoneOffsetInSec"), row.getString("zoneName"), row.getBoolean("isComplete", true));
-                added += historyStore.importMissing(prefs.getString("accountHash", ""), measurements);
-                if ("sleep_segment".equals(job.getString("table"))) sleep++;
+                decoded.add(measurements);
+                reasons.add("");
             } catch (org.json.JSONException | IllegalArgumentException invalid) {
-                skipped++;
-                lastSkip = invalid.getMessage() != null && invalid.getMessage().startsWith("MI_HISTORY_")
-                        ? SessionLog.redact(invalid.getMessage()) : "MI_HISTORY_ROW_INVALID";
-            } catch (IllegalStateException full) {
-                if (!"HEALTH_OUTBOX_FULL".equals(full.getMessage())) throw full;
-                code = "MI_HISTORY_OPEN_OPPO_QUEUE_FULL";
-                break; // Keep this row's cursor so it resumes after OPPO drains the queue.
+                decoded.add(java.util.List.of());
+                reasons.add(invalid.getMessage() != null && invalid.getMessage().startsWith("MI_HISTORY_")
+                        ? SessionLog.redact(invalid.getMessage()) : "MI_HISTORY_ROW_INVALID");
+            }
+            checkTime = time;
+            checkKey = key;
+        }
+        var batch = historyStore.importHistoryBatch(prefs.getString("accountHash", ""), decoded);
+        added += batch.added();
+        long first = prefs.getLong("firstMs", 0), last = prefs.getLong("lastMs", 0);
+        for (int i = 0; i < batch.consumed(); i++) {
+            Bundle row = rows.get(i);
+            if (!reasons.get(i).isEmpty()) { skipped++; lastSkip = reasons.get(i); }
+            else if ("sleep_segment".equals(job.getString("table"))) sleep++;
+            for (var measurement : decoded.get(i)) {
+                first = first == 0 ? measurement.startMs : Math.min(first, measurement.startMs);
+                last = Math.max(last, measurement.endMs);
             }
             count++;
-            after = time;
-            afterKey = key;
+            after = row.getLong("time");
+            afterKey = row.getString("key", "");
         }
+        if (batch.full()) code = "MI_HISTORY_OPEN_OPPO_QUEUE_FULL";
         int table = prefs.getInt("table", 0);
         boolean tableDone = input.getBoolean("done") && !"MI_HISTORY_OPEN_OPPO_QUEUE_FULL".equals(code);
-        if (tableDone) { table++; after = -1; afterKey = ""; }
+        var edit = prefs.edit();
+        if (tableDone) {
+            edit.putLong("since:" + job.getString("table"), job.getLong("cutoff"));
+            table++;
+            after = table < MiFitnessHistoryParser.TABLES.size()
+                    ? Math.max(-1, prefs.getLong("since:" + MiFitnessHistoryParser.TABLES.get(table), -1) - HISTORY_OVERLAP_SECONDS) : -1;
+            afterKey = "";
+        }
         boolean active = table < MiFitnessHistoryParser.TABLES.size();
         if (!active) code = "MI_HISTORY_LOCAL_COMPLETE";
-        if (!prefs.edit().putBoolean("active", active).putInt("table", table).putLong("time", after)
+        if (!edit.putBoolean("active", active).putInt("table", table).putLong("time", after)
                 .putString("key", afterKey).putLong("rows", count).putLong("added", added)
                 .putLong("skipped", skipped).putLong("sleepRows", sleep).putString("lastSkip", lastSkip)
+                .putLong("firstMs", first).putLong("lastMs", last)
                 .putString("status", code).commit()) throw new IllegalStateException("MI_HISTORY_PROGRESS_WRITE_FAILED");
-        if (tableDone || !"MI_HISTORY_RUNNING".equals(code)) {
+        boolean changedStatus = !code.equals(job.getString("status", ""));
+        if (tableDone || changedStatus) {
             SessionLog.line(getContext(), code + " table=" + job.getString("table")
                     + " rows=" + count + " added=" + added + " skipped=" + skipped + " sleep=" + sleep);
         }
-        getContext().getContentResolver().notifyChange(HealthQueueProvider.URI, null);
-        getContext().getContentResolver().notifyChange(HealthQueueProvider.RECORDS_URI, null);
+        if (tableDone || batch.full() || android.os.SystemClock.elapsedRealtime() - lastHistoryNotice >= 1500) {
+            lastHistoryNotice = android.os.SystemClock.elapsedRealtime();
+            getContext().getContentResolver().notifyChange(HealthQueueProvider.URI, null);
+            getContext().getContentResolver().notifyChange(HealthQueueProvider.RECORDS_URI, null);
+        }
         getContext().getContentResolver().notifyChange(HISTORY_URI, null);
         return historyStatus();
     }

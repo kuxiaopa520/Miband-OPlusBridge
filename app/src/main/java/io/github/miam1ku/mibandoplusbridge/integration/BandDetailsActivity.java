@@ -271,14 +271,6 @@ public final class BandDetailsActivity extends AppCompatActivity {
     private boolean openNativePanelIfRequested() {
         Intent incoming = getIntent();
         if (!panelRequest(incoming)) return false;
-        if (new io.github.miam1ku.mibandoplusbridge.service.OwnershipController(this).coexistReady()) {
-            Intent official = getPackageManager().getLaunchIntentForPackage("com.mi.health");
-            if (official == null) return false;
-            try { startActivity(official); }
-            catch (ActivityNotFoundException | SecurityException unavailable) { return false; }
-            finish();
-            return true;
-        }
         Intent panel = new Intent(incoming);
         if (!NativePanel.redirect(this, panel)) return false;
         try {

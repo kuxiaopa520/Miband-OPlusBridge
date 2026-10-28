@@ -54,15 +54,16 @@ public final class MiFitnessHistoryReaderTest {
 
     @Test public void paginationDoesNotLoseDifferentKeysAtTheSameSecond() {
         try (SQLiteDatabase db = database()) {
-            for (int i = 0; i < 63; i++) insert(db, "heart_rate", "selected", 1700000000L + i, 0, "{\"bpm\":72}");
-            insert(db, "heart_rate", "selected", 1700000063L, 0, "{\"bpm\":73}");
-            insert(db, "single_heart_rate", "selected", 1700000063L, 0, "{\"bpm\":74}");
+            int size = MiFitnessMirrorProvider.HISTORY_PAGE_SIZE;
+            for (int i = 0; i < size - 1; i++) insert(db, "heart_rate", "selected", 1700000000L + i, 0, "{\"bpm\":72}");
+            insert(db, "heart_rate", "selected", 1700000000L + size - 1, 0, "{\"bpm\":73}");
+            insert(db, "single_heart_rate", "selected", 1700000000L + size - 1, 0, "{\"bpm\":74}");
             Bundle request = job();
             Bundle first = MiFitnessHistoryReader.readPage(db, request);
             var firstRows = first.getParcelableArrayList("data", Bundle.class);
-            assertEquals(64, firstRows.size());
+            assertEquals(size, firstRows.size());
             assertFalse(first.getBoolean("done"));
-            Bundle last = firstRows.get(63);
+            Bundle last = firstRows.get(size - 1);
             request.putLong("time", last.getLong("time"));
             request.putString("key", last.getString("key"));
             Bundle second = MiFitnessHistoryReader.readPage(db, request);

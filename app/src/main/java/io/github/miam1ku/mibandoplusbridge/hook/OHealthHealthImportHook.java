@@ -57,6 +57,9 @@ public final class OHealthHealthImportHook {
     private final AtomicLong accountEpoch = new AtomicLong();
     private final AtomicBoolean tokenRefreshTried = new AtomicBoolean();
     private final AtomicBoolean tokenFallbackLogged = new AtomicBoolean();
+    private volatile boolean running;
+    private final AtomicBoolean requestedWhileRunning = new AtomicBoolean();
+    private long lastPointProgress;
     private long retryAfter;
     private boolean stressZerosCleared;
     private String lastFailure;
@@ -499,6 +502,7 @@ public final class OHealthHealthImportHook {
     }
 
     private void request() {
+        if (running) { requestedWhileRunning.set(true); return; }
         if (scheduled.compareAndSet(false, true)) worker.post(work);
     }
 
@@ -509,7 +513,10 @@ public final class OHealthHealthImportHook {
             return;
         }
         scheduled.set(false);
+        if (running) return;
+        running = true;
         boolean retrySoon = false;
+        Throwable incomplete = null;
         try {
             ensureAccount();
             if (!usableAccount(host.account())) {
@@ -517,14 +524,21 @@ public final class OHealthHealthImportHook {
                 return;
             }
             if (host.modern) ensureHeytapContext();
+            if (OHealthDeviceHook.refreshForImport() == null) {
+                reportProgress("WAIT_DEVICE", "SLEEP_DEVICE_NOT_READY");
+                scheduleRetry(2_000);
+                return;
+            }
             OHealthDeviceHook.rememberBand(host.loader);
             if (sleep != null) {
                 try {
+                    reportProgress("SLEEP", "");
                     sleep.write(context);
                 } catch (SecurityException paused) {
                     throw paused;
                 } catch (Exception | LinkageError sleepFail) {
                     retrySoon |= transientImport(sleepFail);
+                    incomplete = sleepFail;
                     logImportFailure(sleepFail);
                 }
             }
@@ -535,20 +549,32 @@ public final class OHealthHealthImportHook {
                     throw paused;
                 } catch (Exception | LinkageError stressFail) {
                     retrySoon = true;
+                    incomplete = stressFail;
                     logImportFailure(stressFail);
                 }
             }
+            reportProgress("POINTS", "");
             drain();
+            reportProgress("STEPS", "");
             if (steps != null) steps.write(context);
             publishCard();
+            reportProgress("SPORT", "");
             if (sports != null) sports.write(context);
-            lastFailure = null;
-            if (retrySoon) scheduleRetry(2_000);
             OHealthHomeMetricHook.requestReload();
+            if (incomplete != null) {
+                scheduleRetry(retrySoon ? 2_000 : FAILURE_COOLDOWN_MS);
+                logImportFailure(incomplete);
+            } else {
+                lastFailure = null;
+                reportProgress("DONE", "");
+            }
         } catch (Exception | LinkageError failure) {
             scheduleRetry(transientImport(failure) ? 2_000 : FAILURE_COOLDOWN_MS);
             logImportFailure(failure);
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
+        } finally {
+            running = false;
+            if (requestedWhileRunning.getAndSet(false) && !scheduled.get()) request();
         }
     }
 
@@ -581,7 +607,7 @@ public final class OHealthHealthImportHook {
 
     /** The app can already be signed in without calling getSsoId. Read it once per import pass. */
     private void ensureAccount() {
-        if (usableAccount(host.account())) return;
+        if (!host.modern && usableAccount(host.account())) return;
         try {
             Object value = host.modern ? host.accountGetter.invoke(host.companion, "user_ssoid")
                     : host.accountGetter.invoke(host.companion);
@@ -593,10 +619,13 @@ public final class OHealthHealthImportHook {
                 }
                 return;
             }
-            if (!usableAccount(host.account())) {
+            if (host.modern || !usableAccount(host.account())) {
                 String previous = observedAccount.getAndSet(account);
                 host.publishedAccount = account;
-                if (!Objects.equals(previous, account)) accountEpoch.incrementAndGet();
+                if (!Objects.equals(previous, account)) {
+                    accountEpoch.incrementAndGet();
+                    adoptAccount(account);
+                }
             }
             HookRuntime.log("OHEALTH_ACCOUNT_OBSERVED");
         } catch (Throwable failure) {
@@ -606,6 +635,7 @@ public final class OHealthHealthImportHook {
 
     private void scheduleRetry(long wait) {
         retryAfter = SystemClock.elapsedRealtime() + wait;
+        worker.removeCallbacks(work);
         scheduled.set(true);
         worker.postDelayed(work, wait);
     }
@@ -614,6 +644,7 @@ public final class OHealthHealthImportHook {
         String reason = unwrap(failure).getMessage();
         return "SLEEP_DEVICE_NOT_READY".equals(reason)
                 || "IMPORT_NOT_READY".equals(reason)
+                || "IMPORT_RECEIPT_UNAVAILABLE".equals(reason)
                 || "SLEEP_IMPORT_NOT_READY".equals(reason)
                 || "IMPORT_READ_FAILED_100015".equals(reason)
                 || "IMPORT_READ_FAILED_100003".equals(reason);
@@ -638,6 +669,19 @@ public final class OHealthHealthImportHook {
             OHealthDeviceHook.traceLine(context, "OHEALTH_IMPORT_" + detail);
         }
         lastFailure = detail;
+        reportProgress("ERROR", reason != null && reason.matches("[A-Z][A-Z0-9_]{1,90}") ? reason : cause.getClass().getSimpleName());
+    }
+
+    private void reportProgress(String phase, String error) {
+        String account = host.account();
+        if (!usableAccount(account)) return;
+        try {
+            Bundle data = new Bundle();
+            data.putString("account", account);
+            data.putString("phase", phase);
+            data.putString("error", error);
+            context.getContentResolver().call(HealthQueueProvider.URI, "importProgress", null, data);
+        } catch (RuntimeException ignored) { }
     }
 
     private void ensureHeytapContext() {
@@ -693,6 +737,7 @@ public final class OHealthHealthImportHook {
             int acknowledged = 0;
             int released = 0;
             boolean retained = false;
+            List<HealthRecord> delivered = new ArrayList<>();
             for (Map.Entry<Batch, List<HealthRecord>> group : groups.entrySet()) {
                 requireAccount(account, epoch);
                 OHealthHealthModels model = host.models.get(group.getKey().kind());
@@ -735,7 +780,7 @@ public final class OHealthHealthImportHook {
                     requireAccount(account, epoch);
                     found = host.read(api, account, model, records);
                 }
-                int before = acknowledged;
+                int before = delivered.size();
                 for (HealthRecord record : records) {
                     OHealthHealthModels.Point key = model.key(account, record);
                     if (!delivered(found, key, inserted)) {
@@ -743,18 +788,27 @@ public final class OHealthHealthImportHook {
                         continue;
                     }
                     requireAccount(account, epoch);
-                    Bundle receipt = new Bundle();
-                    receipt.putString("account", account);
-                    receipt.putString("recordId", record.recordId);
-                    receipt.putInt("revision", record.revision);
-                    Bundle result = context.getContentResolver().call(HealthQueueProvider.URI, "ack", null, receipt);
-                    if (result == null) throw new IllegalStateException("IMPORT_RECEIPT_UNAVAILABLE");
-                    acknowledged += result.getInt("acknowledged", 0);
+                    delivered.add(record);
                 }
-                if (acknowledged == before && !missing.isEmpty()) retained = true;
+                if (delivered.size() == before && !missing.isEmpty()) retained = true;
+            }
+            if (!delivered.isEmpty()) {
+                requireAccount(account, epoch);
+                Bundle receipt = new Bundle();
+                receipt.putString("account", account);
+                receipt.putStringArray("recordIds", delivered.stream().map(row -> row.recordId).toArray(String[]::new));
+                receipt.putIntArray("revisions", delivered.stream().mapToInt(row -> row.revision).toArray());
+                Bundle result = context.getContentResolver().call(HealthQueueProvider.URI, "ackBatch", null, receipt);
+                if (result == null) throw new IllegalStateException("IMPORT_RECEIPT_UNAVAILABLE");
+                acknowledged = result.getInt("acknowledged", 0);
             }
             HookRuntime.log("OHEALTH_IMPORT_PAGE acknowledged=" + acknowledged
                     + " released=" + released + " retained=" + retained);
+            if (SystemClock.elapsedRealtime() - lastPointProgress > 5000 || acknowledged == 0) {
+                lastPointProgress = SystemClock.elapsedRealtime();
+                OHealthDeviceHook.traceLine(context, "OHEALTH_IMPORT_PAGE acknowledged=" + acknowledged
+                        + " released=" + released + " retained=" + retained);
+            }
             // Confirmed or host-rejected rows are gone. Continue while the page made progress.
             if (acknowledged == 0 && released == 0) throw new IllegalStateException("IMPORT_READBACK_INCOMPLETE");
         }

@@ -63,6 +63,7 @@ final class OHealthSportWriter {
         String device = OHealthDeviceHook.healthId(queued);
         SharedPreferences written = context.getSharedPreferences("oplusband-sport-import", Context.MODE_PRIVATE);
         List<HealthRecord> tracks = history(context, account, queued, "sport_track");
+        int failed = 0;
         for (HealthRecord record : history(context, account, queued, "sport_session")) {
             HealthRecord track = match(record, tracks);
             String key = device + ":" + record.recordId;
@@ -93,12 +94,15 @@ final class OHealthSportWriter {
                         throw new IllegalStateException("SPORT_IMPORT_MEMORY_FAILED");
                     }
                 } else {
+                    failed++;
                     HookRuntime.log("OHEALTH_SPORT_UNCONFIRMED mode=" + record.value);
                 }
             } catch (Exception failure) {
+                failed++;
                 HookRuntime.log("OHEALTH_SPORT_FAIL " + failure.getClass().getSimpleName());
             }
         }
+        if (failed > 0) throw new IllegalStateException("SPORT_IMPORT_INCOMPLETE");
     }
 
     private static HealthRecord match(HealthRecord session, List<HealthRecord> tracks) {

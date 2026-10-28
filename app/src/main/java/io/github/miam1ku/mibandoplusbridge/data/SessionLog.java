@@ -86,6 +86,15 @@ public final class SessionLog {
                 .append(" rows=").append(history.getLong("rows", 0)).append(" sleep=").append(history.getLong("sleepRows", 0))
                 .append(" added=").append(history.getLong("added", 0)).append(" skipped=").append(history.getLong("skipped", 0))
                 .append(" lastSkip=").append(redact(history.getString("lastSkip", ""))).append('\n');
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            LocalPrefs progress = LocalPrefs.open(context, "health-import-progress");
+            text.append("oppo-import phase=").append(progress.getString("phase", "UNKNOWN"))
+                    .append(" pendingPoints=").append(store.count())
+                    .append(" confirmedPoints=").append(progress.getLong("confirmedPoints", 0))
+                    .append(" sleep=").append(progress.getInt("sleepDone", 0)).append('/').append(progress.getInt("sleepTotal", 0))
+                    .append(" error=").append(redact(progress.getString("error", "")))
+                    .append(" updatedAtMs=").append(progress.getLong("updatedAtMs", 0)).append('\n');
+        }
         File live = new File(context.getNoBackupFilesDir(), "live-status.txt");
         if (live.isFile() && live.length() < 512) {
             text.append("last-direct-status ").append(new String(Files.readAllBytes(live.toPath()), StandardCharsets.UTF_8).trim()).append('\n');

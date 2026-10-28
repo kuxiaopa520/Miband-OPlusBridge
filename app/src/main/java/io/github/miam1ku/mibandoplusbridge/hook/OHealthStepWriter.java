@@ -101,12 +101,13 @@ final class OHealthStepWriter {
         SharedPreferences written = context.getSharedPreferences("oplusband-step-import", Context.MODE_PRIVATE);
         int inserted = 0;
         int skipped = 0;
+        int failed = 0;
         for (BandHistoryParser.StepDay day : days) {
             try {
                 if (writeStat(api, account, device, day, written)) inserted++;
                 else skipped++;
             } catch (Exception failure) {
-                skipped++;
+                failed++;
                 XposedBridge.log("OplusBandBridge OHEALTH_STEP_STAT_FAIL date=" + day.date + " " + failure);
             }
         }
@@ -115,6 +116,7 @@ final class OHealthStepWriter {
             try {
                 chart += writeChart(api, account, device, category, day, records, written);
             } catch (Exception failure) {
+                failed++;
                 XposedBridge.log("OplusBandBridge OHEALTH_STEP_CHART_FAIL date=" + day.date + " " + failure);
             }
         }
@@ -123,9 +125,10 @@ final class OHealthStepWriter {
         publishToday(context, days);
         publishSnapshot(context);
         String summary = "OHEALTH_STEP_IMPORT days=" + days.size()
-                + " inserted=" + inserted + " skipped=" + skipped + " chart=" + chart;
+                + " inserted=" + inserted + " skipped=" + skipped + " chart=" + chart + " failed=" + failed;
         HookRuntime.log(summary);
         XposedBridge.log("OplusBandBridge " + summary);
+        if (failed > 0) throw new IllegalStateException("STEP_IMPORT_INCOMPLETE");
     }
 
     private boolean writeStat(Object api, String account, String device, BandHistoryParser.StepDay day,

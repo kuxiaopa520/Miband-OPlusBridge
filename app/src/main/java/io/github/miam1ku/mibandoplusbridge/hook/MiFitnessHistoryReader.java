@@ -21,6 +21,8 @@ final class MiFitnessHistoryReader {
     private final ClassLoader loader;
     private final Handler worker;
     private final Runnable work = this::run;
+    private boolean waitingCapacity;
+    private long capacityWakeAt;
 
     private MiFitnessHistoryReader(Context context, ClassLoader loader) {
         this.context = context;
@@ -36,6 +38,16 @@ final class MiFitnessHistoryReader {
                 new ContentObserver(reader.worker) {
                     @Override public void onChange(boolean selfChange) { reader.schedule(500); }
                 });
+        HookRuntime.observe(context.getContentResolver(), io.github.miam1ku.mibandoplusbridge.integration.HealthQueueProvider.CAPACITY_URI, false,
+                new ContentObserver(reader.worker) {
+                    @Override public void onChange(boolean selfChange) {
+                        long now = android.os.SystemClock.elapsedRealtime();
+                        if (reader.waitingCapacity && now - reader.capacityWakeAt >= 1500) {
+                            reader.capacityWakeAt = now;
+                            reader.schedule(250);
+                        }
+                    }
+                });
         reader.schedule(5_000); // Also resume a request after either process was restarted.
     }
 
@@ -45,6 +57,7 @@ final class MiFitnessHistoryReader {
     }
 
     private void run() {
+        waitingCapacity = false;
         Bundle job = null;
         try {
             for (int page = 0; page < 8; page++) {
@@ -71,11 +84,12 @@ final class MiFitnessHistoryReader {
                 if (reply == null || !reply.getBoolean("active")) return;
                 String status = reply.getString("status", "");
                 if ("MI_HISTORY_OPEN_OPPO_QUEUE_FULL".equals(status) || "MI_HISTORY_STORAGE_RETRY".equals(status)) {
-                    schedule(30_000);
+                    waitingCapacity = true;
+                    schedule(10_000);
                     return;
                 }
             }
-            schedule(500);
+            schedule(25);
         } catch (Throwable failure) {
             String code = failure instanceof android.database.sqlite.SQLiteException
                     ? "MI_HISTORY_SCHEMA_UNSUPPORTED" : "MI_HISTORY_DATABASE_UNAVAILABLE";
