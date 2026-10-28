@@ -71,6 +71,7 @@ public final class MainActivity extends AppCompatActivity {
     private TextView healthLine;
     private TextView ownershipStatus;
     private Button homePrimary;
+    private MaterialSwitch sleepPause;
     // setup card
     private LinearLayout setupCard;
     private TextView setupTitle;
@@ -189,17 +190,29 @@ public final class MainActivity extends AppCompatActivity {
 
     private void buildFeatures() {
         screen.heading("功能");
+        LinearLayout modeCard = screen.card();
+        MaterialSwitch coexist = screen.switchRow(modeCard, "与小米运动健康共存（实验）",
+                "小米运动健康负责连接、通知、天气和设备设置；桥接把新同步的健康文件复制给 OPPO 健康。"
+                        + "关闭后可选择桥接独占接管。更改后点首页主按钮生效。");
+        coexist.setChecked(new OwnershipController(this).prefersCoexistence());
+        coexist.setOnCheckedChangeListener((button, checked) -> {
+            new OwnershipController(this).preferCoexistence(checked);
+            if (sleepPause != null) sleepPause.setEnabled(!checked);
+            updateControls();
+            refreshNotices();
+        });
         LinearLayout links = screen.card();
         screen.navRow(links, "设备详情", () -> startActivity(new Intent(this, BandDetailsActivity.class)));
-        screen.navRow(links, "天气同步", () -> startActivity(new Intent(this, WeatherActivity.class)));
-        screen.caption(links, "在控制中心添加「手环」磁贴，下拉或点按即可连接。");
+        screen.navRow(links, "天气同步（独占接管）", () -> startActivity(new Intent(this, WeatherActivity.class)));
+        screen.caption(links, "共存时在小米运动健康中同步；独占接管时可用「手环」磁贴连接。");
 
         LinearLayout sleepCard = screen.card();
-        MaterialSwitch sleepPause = screen.switchRow(sleepCard, "入睡后暂停音乐",
+        sleepPause = screen.switchRow(sleepCard, "入睡后暂停音乐（独占接管）",
                 "手环报告入睡时暂停正在播放的音乐，醒来后保持暂停。打开开关时如果已经入睡，会在下一次入睡时生效。"
                         + "通过睡眠记录报告入睡的手环，会在记录同步后暂停，通常需要几分钟。");
         final boolean[] writingSleepPause = {false};
         sleepPause.setChecked(SleepMusic.enabled(this));
+        sleepPause.setEnabled(!new OwnershipController(this).prefersCoexistence());
         sleepPause.setOnCheckedChangeListener((button, checked) -> {
             if (writingSleepPause[0]) return;
             if (SleepMusic.setEnabled(this, checked)) {
@@ -228,7 +241,9 @@ public final class MainActivity extends AppCompatActivity {
         restore = screen.outlined(manageCard, "恢复小米运动健康", () -> changeOwnership(Change.RESTORE));
         remove = screen.dangerOutlined(manageCard, "从健康移除", () -> new MaterialAlertDialogBuilder(this)
                 .setTitle("从健康移除这只手环？")
-                .setMessage("桥接会断开连接，把手环交还小米运动健康。健康历史和加密绑定都会保留，之后可随时重新添加。")
+                .setMessage(new OwnershipController(this).coexistReady()
+                        ? "移除桥接登记后，继续由小米运动健康管理手环。健康历史和加密绑定都会保留。"
+                        : "桥接会断开连接，把手环交还小米运动健康。健康历史和加密绑定都会保留，之后可随时重新添加。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("移除", (dialog, which) -> changeOwnership(Change.REMOVE))
                 .show());
@@ -325,13 +340,14 @@ public final class MainActivity extends AppCompatActivity {
 
     private void refreshNotices() {
         if (nearbyNotice == null) return;
-        setShown(nearbyNotice, !hasBluetoothPermission());
-        setShown(notifyNotice, !getSystemService(NotificationManager.class).areNotificationsEnabled());
+        boolean coexist = new OwnershipController(this).prefersCoexistence();
+        setShown(nearbyNotice, !coexist && !hasBluetoothPermission());
+        setShown(notifyNotice, !coexist && !getSystemService(NotificationManager.class).areNotificationsEnabled());
         LocalPrefs prefs = LocalPrefs.open(this, BandNotificationListener.SETTINGS);
         boolean healthAccess = prefs.getBoolean("healthSecure", false)
                 && !prefs.getBoolean("healthApproved", true)
                 && prefs.getBoolean("healthGrantFailed", false);
-        setShown(healthAccessNotice, healthAccess);
+        setShown(healthAccessNotice, !coexist && healthAccess);
     }
 
     private void openAppNotificationSettings() {
@@ -365,7 +381,10 @@ public final class MainActivity extends AppCompatActivity {
     private void showSetupGuide() {
         new MaterialAlertDialogBuilder(this)
                 .setTitle("使用说明")
-                .setMessage(Copy.GUIDE)
+                .setMessage("共存模式：保持小米运动健康启用，在模块作用域中持续勾选它。导入绑定后添加到健康，"
+                        + "打开 OPPO 健康完成登录，再打开小米运动健康同步。桥接仅复制此后接收到的健康文件，"
+                        + "数据流向为小米手环 → 小米运动健康 → OPPO 健康。设备设置仍在小米运动健康中操作。\n\n"
+                        + "独占接管模式：\n" + Copy.GUIDE)
                 .setPositiveButton("好的", null)
                 .show();
     }
@@ -478,6 +497,8 @@ public final class MainActivity extends AppCompatActivity {
                         ? (needsOfficialRestore()
                                 ? "小米运动健康仍在暂停。可以添加设备，或在「管理」中恢复小米运动健康。"
                                 : "")
+                        : owner.coexistReady()
+                                ? "共存模式：由小米运动健康连接手环，新同步的健康文件会复制到 OPPO 健康。"
                         : "NATIVE".equals(owner.mode())
                                 ? "由桥接管理，连接状态以手环实际响应为准。"
                                 : "当前由小米运动健康管理，点「立即同步」重新接管。";
@@ -519,19 +540,32 @@ public final class MainActivity extends AppCompatActivity {
                 if (change == Change.ADD || change == Change.RECONNECT) {
                     if (!isUnlocked()) throw new IllegalStateException("USER_LOCKED");
                     if (!owner.probeRoot()) throw new OwnershipController.Failure("ROOT_REQUIRED");
-                    if (!hasBluetoothPermission()) throw new IllegalStateException("NEARBY_PERMISSION_REQUIRED");
+                    if (!owner.prefersCoexistence() && !hasBluetoothPermission()) {
+                        throw new IllegalStateException("NEARBY_PERMISSION_REQUIRED");
+                    }
                     if (change == Change.ADD) {
                         repository.registerDevice();
                         registrationSaved = true;
                     }
                     if (!repository.isRegistered()) throw new IllegalStateException("DEVICE_NOT_REGISTERED");
-                    if (!owner.nativeReady()) owner.takeOver();
-                    if (!repository.isRegistered() || !owner.nativeReady()) {
-                        throw new IllegalStateException("NATIVE_OWNERSHIP_REQUIRED");
+                    if (owner.prefersCoexistence()) {
+                        BandLiveService.stop(this);
+                        if (!SppDiagnosticClient.stopAllAndWait()) {
+                            throw new OwnershipController.Failure("DIAGNOSTIC_SOCKET_STILL_ACTIVE");
+                        }
+                        owner.useCoexistence();
+                        repository.markSessionClosed();
+                        getContentResolver().notifyChange(DeviceCardProvider.URI, null);
+                        message = "共存已开启。打开 OPPO 健康完成登录，再到小米运动健康同步手环。";
+                    } else {
+                        if (!owner.nativeReady()) owner.takeOver();
+                        if (!repository.isRegistered() || !owner.nativeReady()) {
+                            throw new IllegalStateException("NATIVE_OWNERSHIP_REQUIRED");
+                        }
+                        BandLiveService.start(this);
+                        BandLiveService.requestSync(this);
+                        message = "设备已登记，正在连接。";
                     }
-                    BandLiveService.start(this);
-                    BandLiveService.requestSync(this);
-                    message = "设备已登记，正在连接。";
                 } else {
                     if (change == Change.REMOVE) {
                         repository.unregisterDevice();
@@ -563,12 +597,14 @@ public final class MainActivity extends AppCompatActivity {
             }
             String visible = message;
             boolean followProfile = openProfileAfterRestore(change, officialRestored);
+            boolean openOfficial = (change == Change.ADD || change == Change.RECONNECT) && owner.coexistReady();
             main.post(() -> {
                 if (isDestroyed()) return;
                 changingOwnership = false;
                 ownershipStatus.setText(visible);
                 updateControls();
                 refreshDevice();
+                if (openOfficial) launchMiHealth();
                 if (profileAfterRestore && followProfile) {
                     profileAfterRestore = false;
                     startProfileWindow();
@@ -590,6 +626,10 @@ public final class MainActivity extends AppCompatActivity {
         }
         if (!isUnlocked()) {
             ownershipStatus.setText("解锁手机后再管理设备。");
+            return;
+        }
+        if (new OwnershipController(this).prefersCoexistence()) {
+            changeOwnership(change);
             return;
         }
         if (!hasBluetoothPermission()) {
@@ -631,7 +671,8 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void ensureCallPermissions() {
-        if (callPermissionsAsked || !isUnlocked() || !new BandStateRepository(this).isRegistered()) return;
+        if (callPermissionsAsked || !isUnlocked() || !new BandStateRepository(this).isRegistered()
+                || new OwnershipController(this).prefersCoexistence()) return;
         boolean phone = checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
         boolean hangup = checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED;
         if (phone && hangup) return;
@@ -670,7 +711,9 @@ public final class MainActivity extends AppCompatActivity {
             if (progress.showChecklist()) bindChecklist(progress);
         }
         if (homePrimary != null) {
-            homePrimary.setText(progress.primaryLabel());
+            homePrimary.setText(progress.current() == SetupProgress.Step.DONE
+                    && new OwnershipController(this).prefersCoexistence()
+                    ? "打开小米运动健康同步" : progress.primaryLabel());
             homePrimary.setEnabled(!changingOwnership && !probingRoot);
         }
         if (openKsu != null) {
@@ -701,7 +744,8 @@ public final class MainActivity extends AppCompatActivity {
                 TransportObservation.liveProfile(this, model), model);
         boolean nativeOwned = false;
         try {
-            nativeOwned = new OwnershipController(this).nativeReady();
+            OwnershipController owner = new OwnershipController(this);
+            nativeOwned = owner.prefersCoexistence() ? owner.coexistReady() : owner.nativeReady();
         } catch (RuntimeException ignored) { }
         boolean accountConfirmed = false;
         try {
@@ -717,6 +761,9 @@ public final class MainActivity extends AppCompatActivity {
         screen.setStep(stepImport, 2, "导入绑定", stepState(2, current));
         screen.setStep(stepAdd, 3, "添加到健康", stepState(3, current));
         String hint = progress.primaryHint();
+        if (progress.current() == SetupProgress.Step.ADD && new OwnershipController(this).prefersCoexistence()) {
+            hint = "小米运动健康继续管理手环，新同步的健康文件会复制到 OPPO 健康。";
+        }
         primaryHint.setText(hint);
         primaryHint.setVisibility(hint.isEmpty() ? View.GONE : View.VISIBLE);
     }
@@ -762,7 +809,8 @@ public final class MainActivity extends AppCompatActivity {
                 setOptionalCaption(connectionHint, "");
             } else {
                 screen.setChip(statusChip, "等待连接", Tone.NEUTRAL);
-                setOptionalCaption(connectionHint, Copy.offlineReason(liveStatus()));
+                setOptionalCaption(connectionHint, new OwnershipController(this).coexistReady()
+                        ? "打开小米运动健康连接并同步手环。" : Copy.offlineReason(liveStatus()));
             }
             setOptionalCaption(metricsLine, metricsText(state));
             setOptionalCaption(healthLine, healthExtras());

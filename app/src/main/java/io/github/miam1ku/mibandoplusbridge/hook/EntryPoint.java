@@ -175,6 +175,11 @@ public final class EntryPoint extends XposedModule {
                 probe("OplusBandBridge: HOST_VERSION_UNSUPPORTED");
             }
             try {
+                MiFitnessMirrorHook.install(context, load.loader);
+            } catch (Throwable incompatible) {
+                probe("MI_MIRROR_HOOK_UNAVAILABLE");
+            }
+            try {
                 TransportProbeHook.install(context, load.loader);
             } catch (Throwable incompatible) {
                 probe("TRANSPORT_PROBE_UNAVAILABLE");

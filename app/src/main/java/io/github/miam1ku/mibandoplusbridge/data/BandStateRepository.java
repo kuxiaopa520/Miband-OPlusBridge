@@ -137,6 +137,26 @@ public final class BandStateRepository {
         }
     }
 
+    /** Connection and optional battery reported by the selected device's official app. */
+    public void recordCompanionState(String address, boolean connected, String firmware,
+            int battery, int chargerState) {
+        if (!new OwnershipController(context).coexistReady()) return;
+        synchronized (STATE_LOCK) {
+            if (!isRegistered() || !MacIds.same(address(), address)) return;
+            LocalPrefs state = state();
+            var editor = state.edit().putBoolean("connected", connected)
+                    .putLong("lastUpdateMs", System.currentTimeMillis())
+                    .putLong("revision", state.getLong("revision", 0) + 1);
+            if (firmware != null && !firmware.isBlank() && firmware.length() <= 128) {
+                editor.putString("verifiedFirmware", firmware);
+            }
+            if (battery >= 0 && battery <= 100) editor.putInt("battery", battery);
+            if (chargerState >= 1 && chargerState <= 3) editor.putBoolean("charging", chargerState == 1);
+            if (!editor.commit()) throw new IllegalStateException("BAND_STATE_STORAGE_FAILED");
+            context.getContentResolver().notifyChange(DeviceCardProvider.URI, null);
+        }
+    }
+
     /** The body picture changed. Bump the card revision so device space reads the new URI. */
     public void noteDeviceImage() {
         synchronized (STATE_LOCK) {

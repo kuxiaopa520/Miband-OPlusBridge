@@ -14,6 +14,9 @@ public final class HostVersionNoticeTest {
         assertEquals("", HostVersionNotice.fingerprint(installed));
         assertTrue(HostVersionNotice.accepted(HostIdentity.HEALTH_PACKAGE, "6.1.18_9fe4116_260429", 6_011_800L));
         assertTrue(HostVersionNotice.accepted(HostIdentity.HEALTH_PACKAGE, "6.9.40_f91e7bd_260930", 6_094_000L));
+        assertTrue(HostVersionNotice.accepted(HostIdentity.HEALTH_PACKAGE, "6.7.17_a4b586b_260821", 6_071_700L));
+        assertFalse(HostVersionNotice.accepted(HostIdentity.HEALTH_PACKAGE, "6.7.17_other_build", 6_071_700L));
+        assertFalse(HostVersionNotice.accepted(HostIdentity.HEALTH_PACKAGE, "6.7.17_a4b586b_260821", 6_071_701L));
         assertTrue(HostVersionNotice.accepted(HostIdentity.DEVICES_PACKAGE, "17.4.10", 1_704_010L));
     }
 

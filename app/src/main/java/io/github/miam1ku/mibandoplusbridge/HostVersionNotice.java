@@ -4,12 +4,13 @@ package io.github.miam1ku.mibandoplusbridge;
 
 import java.util.List;
 
-/** Verified host builds. A different installed version is a hint, not a block. */
+/** Host builds accepted by runtime testing or a recorded static contract check. */
 public final class HostVersionNotice {
     public record Expectation(String label, String packageName, String verified) {}
 
     public static final List<Expectation> EXPECTATIONS = List.of(
-            new Expectation("OPPO 健康", HostIdentity.HEALTH_PACKAGE, "6.1.18、6.9.37 或 6.9.40"),
+            new Expectation("OPPO 健康", HostIdentity.HEALTH_PACKAGE,
+                    "6.1.18、6.9.37、6.9.40；6.7.17 已核对静态接口，待真机验证"),
             new Expectation("设备空间", HostIdentity.DEVICES_PACKAGE, "17.4.10 或 17.25"),
             new Expectation("小米运动健康", HostIdentity.MI_PACKAGE, "3.59.1"));
 
@@ -22,6 +23,7 @@ public final class HostVersionNotice {
         return switch (packageName) {
             case HostIdentity.HEALTH_PACKAGE -> versionCode == 6_011_800L || versionCode == 6_093_700L
                     || versionCode == 6_094_000L
+                    || (versionCode == 6_071_700L && "6.7.17_a4b586b_260821".equals(name))
                     || name.startsWith("6.1.18") || name.startsWith("6.9.37") || name.startsWith("6.9.40");
             case HostIdentity.DEVICES_PACKAGE -> versionCode == 1_704_010L
                     || name.startsWith("17.4.") || name.startsWith("17.25");
@@ -44,7 +46,7 @@ public final class HostVersionNotice {
 
     public static String message(List<Installed> installed) {
         StringBuilder text = new StringBuilder(
-                "这些应用的版本和实测版本有差异，可以照常使用。通知、设备卡片和健康同步在下列实测版本上经过实机验证：\n");
+                "这些应用的版本和适配版本有差异，可以照常使用。已记录的适配版本和验证范围如下：\n");
         for (Expectation expect : EXPECTATIONS) {
             Installed app = find(installed, expect.packageName());
             if (app == null || !app.present()
@@ -52,9 +54,9 @@ public final class HostVersionNotice {
             String current = app.versionName() == null || app.versionName().isBlank()
                     ? Long.toString(app.versionCode()) : app.versionName();
             text.append('\n').append(expect.label()).append(" 当前 ").append(current)
-                    .append("，实测 ").append(expect.verified());
+                    .append("，适配 ").append(expect.verified());
         }
-        text.append("\n\n升级到实测版本效果最稳定。");
+        text.append("\n\n可参考适配版本，并在本机检查连接和同步效果。");
         return text.toString();
     }
 

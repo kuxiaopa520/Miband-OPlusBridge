@@ -51,6 +51,47 @@ public final class OwnershipController {
 
     public String mode() { return state.getString("mode", "OFFICIAL"); }
 
+    public boolean prefersCoexistence() { return state.getBoolean("preferCoexistence", true); }
+
+    public void preferCoexistence(boolean enabled) {
+        if (!state.edit().putBoolean("preferCoexistence", enabled).commit()) {
+            throw new IllegalStateException("OWNERSHIP_STORAGE_FAILED");
+        }
+    }
+
+    public synchronized boolean coexistReady() {
+        if (!"COEXIST".equals(mode()) || state.getBoolean("ownsDisable", false)
+                || state.getBoolean("transitionPending", false)
+                || !context.getSystemService(UserManager.class).isUserUnlocked()) return false;
+        try {
+            int enabled = officialState();
+            return enabled == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+                    || enabled == PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+        } catch (Failure missing) {
+            return false;
+        }
+    }
+
+    /** The caller closes direct sessions first, exactly as when returning to the official app. */
+    public synchronized void useCoexistence() throws Failure {
+        GATE.writeLock().lock();
+        try {
+            requireUnlocked();
+            restoreOfficial();
+            int enabled = officialState();
+            if (enabled != PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+                    && enabled != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                throw new Failure("OFFICIAL_ALREADY_DISABLED");
+            }
+            if (!state.edit().putString("mode", "COEXIST").commit()) {
+                throw new Failure("OWNERSHIP_STORAGE_FAILED");
+            }
+            ensureStartupAllowed();
+        } finally {
+            GATE.writeLock().unlock();
+        }
+    }
+
     public synchronized boolean nativeReady() {
         return "NATIVE".equals(mode()) && state.getBoolean("ownsDisable", false)
                 && !state.getBoolean("officialRestored", false)
@@ -112,7 +153,12 @@ public final class OwnershipController {
     public synchronized void restoreOfficial() throws Failure {
         GATE.writeLock().lock();
         try {
-        if (!state.getBoolean("ownsDisable", false) && !state.getBoolean("transitionPending", false)) return;
+        if (!state.getBoolean("ownsDisable", false) && !state.getBoolean("transitionPending", false)) {
+            if ("COEXIST".equals(mode()) && !state.edit().putString("mode", "OFFICIAL").commit()) {
+                throw new Failure("OWNERSHIP_STORAGE_FAILED");
+            }
+            return;
+        }
         requireRoot();
         int original = state.getInt("originalEnabled", -1);
         if (original != 0 && original != 1) throw new Failure("ORIGINAL_STATE_UNKNOWN");

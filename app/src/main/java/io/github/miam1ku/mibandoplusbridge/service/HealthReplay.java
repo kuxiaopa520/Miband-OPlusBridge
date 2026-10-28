@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /** Replays durable device/account-owned files without occupying the socket or command coordinator. */
-final class HealthReplay implements AutoCloseable {
+public final class HealthReplay implements AutoCloseable {
     private static final int WALKING_BACKFILL_DAYS = 30;
     private static final long DAY_HALF_MS = 43_200_000L;
     private static volatile boolean walkingBackfilled;
@@ -42,7 +42,7 @@ final class HealthReplay implements AutoCloseable {
         @Override public void onChange(boolean selfChange) { request(); }
     };
 
-    HealthReplay(Context context, Consumer<String> status, Runnable capacityChanged) {
+    public HealthReplay(Context context, Consumer<String> status, Runnable capacityChanged) {
         this.context = context.getApplicationContext();
         this.records = new HealthRecordStore(this.context);
         this.raw = new RawFitnessFileStore(this.context);
@@ -60,7 +60,7 @@ final class HealthReplay implements AutoCloseable {
         }
     }
 
-    void request() {
+    public void request() {
         if (closed) return;
         requested.set(true);
         if (!running.compareAndSet(false, true)) return;

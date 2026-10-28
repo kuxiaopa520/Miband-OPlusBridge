@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 
 /** Reads the GitHub Releases listing. The user installs the APK from the release page. */
 public final class UpdateChecker {
-    public static final String OWNER_REPO = "MiaM1ku/Miband-OPlusBridge";
+    public static final String OWNER_REPO = "kuxiaopa520/Miband-OPlusBridge";
     public static final String PAGE = "https://github.com/" + OWNER_REPO + "/releases/latest";
     private static final String API = "https://api.github.com/repos/" + OWNER_REPO + "/releases/latest";
 

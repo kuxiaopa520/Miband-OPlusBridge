@@ -1,0 +1,56 @@
+[
+  {
+    "package": "com.heytap.health",
+    "version": "6.7.17_a4b586b_260821",
+    "sha256": "3bdecd3c3dd84fc1094f2cd6a02a575cbb06df00c764f4c5fe299d0394c1cb30",
+    "hashMatches": true,
+    "classesChecked": 22,
+    "methodsChecked": 143,
+    "missing": [],
+    "runtimeVerified": false,
+    "dexLocations": {
+      "com.heytap.databaseengine.api.ISportHealthDataAPI": "classes12.dex",
+      "com.heytap.databaseengine.model.CommonBackBean": "classes12.dex",
+      "com.heytap.databaseengine.option.DataInsertOption": "classes12.dex",
+      "com.heytap.databaseengine.option.DataReadOption": "classes12.dex",
+      "com.heytap.device.data.storage.DataRepositoryHelper$Companion": "classes12.dex",
+      "com.heytap.device.data.storage.DataRepositoryHelper": "classes12.dex",
+      "com.heytap.databaseengine.model.BreathRate": "classes12.dex",
+      "com.heytap.databaseengine.model.HeartRate": "classes12.dex",
+      "com.heytap.databaseengine.model.OneTimeSport": "classes12.dex",
+      "com.heytap.databaseengine.model.Sleep": "classes12.dex",
+      "com.heytap.databaseengine.model.SleepDataStat": "classes12.dex",
+      "com.heytap.databaseengine.model.SportDataStat": "classes12.dex",
+      "com.heytap.databaseengine.model.bloodoxygensaturation.BloodOxygenSaturation": "classes12.dex",
+      "com.heytap.databaseengine.model.stress.Stress": "classes12.dex",
+      "com.heytap.health.SportHealthApplication": "classes12.dex",
+      "com.heytap.device.data.storage.SyncObserver": "classes12.dex",
+      "com.heytap.health.devicemanager.processor.bean.UserDeviceInfo": "classes13.dex",
+      "com.heytap.health.device.tab.controller.DeviceTabAdapterController": "classes13.dex",
+      "com.heytap.health.network.core.AutoDisposeObserver": "classes14.dex",
+      "io.reactivex.rxjava3.core.Observer": "classes7.dex",
+      "io.reactivex.rxjava3.core.Observable": "classes7.dex",
+      "io.reactivex.rxjava3.observers.DisposableObserver": "classes7.dex"
+    },
+    "passed": true
+  },
+  {
+    "package": "com.mi.health",
+    "version": "3.59.1",
+    "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
+    "hashMatches": true,
+    "classesChecked": 6,
+    "methodsChecked": 15,
+    "missing": [],
+    "runtimeVerified": false,
+    "dexLocations": {
+      "com.xiaomi.fit.fitness.device.mi.receive.FitnessReceiverHandler": "classes10.dex",
+      "com.xiaomi.fit.fitness.eco.device.mi.receive.FitnessReceiverHandler": "classes10.dex",
+      "com.xiaomi.wearable.core.DeviceInfo": "classes3.dex",
+      "com.xiaomi.wearable.core.WearApiResult": "classes3.dex",
+      "com.xiaomi.wearable.wear.api.WearApiCall": "classes3.dex",
+      "com.xiaomi.fit.device.extensions.DeviceModelExtKt": "classes9.dex"
+    },
+    "passed": true
+  }
+]

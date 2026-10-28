@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "STATIC_ONLY",
+  "runtimeVerified": false,
+  "oppo": {
+    "package": "com.heytap.health",
+    "version": "6.7.17_a4b586b_260821",
+    "sha256": "3bdecd3c3dd84fc1094f2cd6a02a575cbb06df00c764f4c5fe299d0394c1cb30",
+    "classes": {
+      "com.heytap.device.data.storage.DataRepositoryHelper": [],
+      "com.heytap.device.data.storage.DataRepositoryHelper$Companion": [
+        "getDbApi()",
+        "getSsoId()"
+      ],
+      "com.heytap.databaseengine.api.ISportHealthDataAPI": [
+        "insertSportHealthData(Lcom/heytap/databaseengine/option/DataInsertOption;)",
+        "readSportHealthData(Lcom/heytap/databaseengine/option/DataReadOption;)"
+      ],
+      "com.heytap.databaseengine.option.DataReadOption": [
+        "<init>()V",
+        "setDataTable(I)",
+        "setDeviceUniqueId(Ljava/lang/String;)",
+        "setEndTime(J)",
+        "setReadHealthDataType(I)",
+        "setSsoid(Ljava/lang/String;)",
+        "setStartTime(J)"
+      ],
+      "com.heytap.databaseengine.option.DataInsertOption": [
+        "<init>()V",
+        "setDataTable(I)",
+        "setDatas(Ljava/util/List;)"
+      ],
+      "io.reactivex.rxjava3.core.Observable": [
+        "subscribe(Lio/reactivex/rxjava3/core/Observer;)"
+      ],
+      "io.reactivex.rxjava3.core.Observer": [],
+      "com.heytap.device.data.storage.SyncObserver": [
+        "<init>()V",
+        "dispose()",
+        "result()"
+      ],
+      "com.heytap.databaseengine.model.CommonBackBean": [
+        "getErrorCode()",
+        "getObj()"
+      ],
+      "com.heytap.databaseengine.model.SportDataStat": [
+        "<init>()V",
+        "getDate()I",
+        "getDeviceUniqueId()Ljava/lang/String;",
+        "getSportMode()I",
+        "getTotalCalories()J",
+        "getTotalMoveAboutTimes()I",
+        "getTotalSteps()I",
+        "setDate(I)",
+        "setDeviceUniqueId(Ljava/lang/String;)",
+        "setSportMode(I)",
+        "setSsoid(Ljava/lang/String;)",
+        "setSyncStatus(I)",
+        "setTimezone(Ljava/lang/String;)",
+        "setTotalCalories(J)",
+        "setTotalDistance(I)",
+        "setTotalMoveAboutTimes(I)",
+        "setTotalSteps(I)",
+        "setUpdateTimestamp(J)"
+      ],
+      "io.reactivex.rxjava3.observers.DisposableObserver": [
+        "dispose()V"
+      ],
+      "com.heytap.health.network.core.AutoDisposeObserver": [
+        "dispose()V"
+      ],
+      "com.heytap.databaseengine.model.Sleep": [
+        "<init>()V",
+        "getDeviceUniqueId()Ljava/lang/String;",
+        "getEndTimestamp()J",
+        "getSleepState()I",
+        "getStartTimestamp()J",
+        "setDeviceUniqueId(Ljava/lang/String;)",
+        "setDisplay(I)",
+        "setEndTimestamp(J)",
+        "setSleepState(I)",
+        "setSsoid(Ljava/lang/String;)",
+        "setStartTimestamp(J)"
+      ],
+      "com.heytap.databaseengine.model.SleepDataStat": [
+        "<init>()V",
+        "getDate()I",
+        "getDeviceUniqueId()Ljava/lang/String;",
+        "getFallAsleep()J",
+        "getSleepOut()J",
+        "getTotalDeepSleepTime()J",
+        "getTotalLightlySleepTime()J",
+        "getTotalRemTime()J",
+        "getTotalSleepTime()J",
+        "getTotalWakeUpTime()J",
+        "setDate(I)",
+        "setDeviceUniqueId(Ljava/lang/String;)",
+        "setFallAsleep(J)",
+        "setSleepOut(J)",
+        "setSsoid(Ljava/lang/String;)",
+        "setTotalDeepSleepTime(J)",
+        "setTotalLightlySleepTime(J)",
+        "setTotalRemTime(J)",
+        "setTotalSleepTime(J)",
+        "setTotalWakeUpTime(J)"
+      ],
+      "com.heytap.databaseengine.model.BreathRate": [
+        "<init>()V",
+        "setConfig(Ljava/lang/Integer;)",
+        "setDataCreatedTimestamp(J)",
+        "setDeviceUniqueId(Ljava/lang/String;)",
+        "setSsoid(Ljava/lang/String;)",
+        "setValue(Ljava/lang/Integer;)"
+      ],
+      "com.heytap.databaseengine.model.OneTimeSport": [
+        "<init>()V",
+        "getData()",
+        "getDeviceUniqueId()",
+        "getEndTimestamp()",
+        "getSportMode()",
+        "getStartTimestamp()",
+        "setClientDataId(Ljava/lang/String;)",
+        "setData(Ljava/lang/String;)",
+        "setDeviceType(Ljava/lang/String;)",
+        "setDeviceUniqueId(Ljava/lang/String;)",
+        "setDisplay(I)",
+        "setEndTimestamp(J)",
+        "setMetaData(Ljava/lang/String;)",
+        "setSportMode(I)",
+        "setSsoid(Ljava/lang/String;)",
+        "setStartTimestamp(J)",
+        "setSyncStatus(I)",
+        "setTimezone(Ljava/lang/String;)",
+        "setVersion(I)"
+      ],
+      "com.heytap.databaseengine.model.HeartRate": [
+        "<init>()V",
+        "getDataCreatedTimestamp()J",
+        "getDeviceUniqueId()Ljava/lang/String;",
+        "getHeartRateType()I",
+        "getHeartRateValue()I",
+        "getSsoid()Ljava/lang/String;",
+        "setDataCreatedTimestamp(J)V",
+        "setDeviceUniqueId(Ljava/lang/String;)V",
+        "setDisplay(I)V",
+        "setHeartRateType(I)V",
+        "setHeartRateValue(I)V",
+        "setReliability(Ljava/lang/Integer;)V",
+        "setSsoid(Ljava/lang/String;)V",
+        "setSyncStatus(I)V"
+      ],
+      "com.heytap.databaseengine.model.bloodoxygensaturation.BloodOxygenSaturation": [
+        "<init>()V",
+        "getBloodOxygenSaturationType()I",
+        "getBloodOxygenSaturationValue()I",
+        "getDataCreatedTimestamp()J",
+        "getDeviceUniqueId()Ljava/lang/String;",
+        "getSsoid()Ljava/lang/String;",
+        "setBloodOxygenSaturationType(I)V",
+        "setBloodOxygenSaturationValue(I)V",
+        "setDataCreatedTimestamp(J)V",
+        "setDeviceUniqueId(Ljava/lang/String;)V",
+        "setDisplay(I)V",
+        "setSsoid(Ljava/lang/String;)V",
+        "setSyncStatus(I)V"
+      ],
+      "com.heytap.databaseengine.model.stress.Stress": [
+        "<init>()V",
+        "getDataCreatedTimestamp()J",
+        "getDeviceUniqueId()Ljava/lang/String;",
+        "getSsoid()Ljava/lang/String;",
+        "getStressType()I",
+        "getStressValue()I",
+        "setDataCreatedTimestamp(J)V",
+        "setDeviceUniqueId(Ljava/lang/String;)V",
+        "setDisplay(I)V",
+        "setSsoid(Ljava/lang/String;)V",
+        "setStressType(I)V",
+        "setStressValue(I)V",
+        "setSyncStatus(I)V"
+      ],
+      "com.heytap.health.device.tab.controller.DeviceTabAdapterController": [
+        "checkDeviceIsDisable(Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;)",
+        "doConnect(Lcom/heytap/health/devicemanager/processor/bean/UserDeviceInfo;Ljava/lang/String;)",
+        "refreshView(Lcom/heytap/health/device/flexadapter/refresh/EventType;)",
+        "refreshWearableDeviceList(Ljava/util/List;Ljava/util/List;Ljava/lang/String;)",
+        "resetCurrSelectMac()"
+      ],
+      "com.heytap.health.SportHealthApplication": [
+        "onCreate()V"
+      ],
+      "com.heytap.health.devicemanager.processor.bean.UserDeviceInfo": [
+        "<init>()V"
+      ]
+    }
+  },
+  "mi": {
+    "package": "com.mi.health",
+    "version": "3.59.1",
+    "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
+    "classes": {
+      "com.xiaomi.fit.fitness.device.mi.receive.FitnessReceiverHandler": [
+        "handleDataInternal(Ljava/lang/String;I[B)Z"
+      ],
+      "com.xiaomi.fit.fitness.eco.device.mi.receive.FitnessReceiverHandler": [
+        "handleData(Ljava/lang/String;I[B)Z"
+      ],
+      "com.xiaomi.wearable.wear.api.WearApiCall": [
+        "callbackClient(Lcom/xiaomi/wearable/core/ICallback;Lcom/xiaomi/wearable/core/WearApiResult;)V",
+        "getDeviceInfo()Lcom/xiaomi/wearable/core/DeviceInfo;",
+        "handleData(I[B)Z",
+        "isConnected()Z",
+        "onConnected()V",
+        "onDisconnected()V",
+        "onUpdate(Lcom/xiaomi/wearable/core/DeviceInfo;)V"
+      ],
+      "com.xiaomi.wearable.core.DeviceInfo": [
+        "getAddress()Ljava/lang/String;",
+        "getDid()Ljava/lang/String;",
+        "getFirmwareVersion()Ljava/lang/String;"
+      ],
+      "com.xiaomi.wearable.core.WearApiResult": [
+        "a()I",
+        "c()[B"
+      ],
+      "com.xiaomi.fit.device.extensions.DeviceModelExtKt": [
+        "convert(Lcom/xiaomi/fitness/device/manager/export/bean/WearableDeviceInfo;)Lcom/xiaomi/wearable/core/DeviceInfo;"
+      ]
+    }
+  }
+}
