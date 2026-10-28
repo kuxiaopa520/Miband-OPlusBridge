@@ -150,17 +150,14 @@ public final class OHealthHealthImportHook {
                 if (observedApi.getAndSet(api) != api && api != null) request();
             }
         });
-        XposedHelpers.findAndHookMethod(Application.class, "onCreate", new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) {
-                restoreSystemAccount();
-                Handler main = HookRuntime.main();
-                main.postDelayed(OHealthHealthImportHook.this::restoreSystemAccount, 2_000);
-                main.postDelayed(OHealthHealthImportHook.this::restoreSystemAccount, 8_000);
-                main.postDelayed(OHealthHealthImportHook.this::restoreSystemAccount, 20_000);
-                main.postDelayed(OHealthHealthImportHook.this::restoreSystemAccount, 45_000);
-                request();
-            }
-        });
+        // Installation now follows Health's onCreate (also true after hot reload). Start
+        // recovery directly instead of waiting for an Application callback that already ran.
+        Handler main = HookRuntime.main();
+        main.post(this::restoreSystemAccount);
+        main.postDelayed(this::restoreSystemAccount, 2_000);
+        main.postDelayed(this::restoreSystemAccount, 8_000);
+        main.postDelayed(this::restoreSystemAccount, 20_000);
+        main.postDelayed(this::restoreSystemAccount, 45_000);
     }
     /**
      * The setup activity treats a missing login task as cancellation and writes tourist mode

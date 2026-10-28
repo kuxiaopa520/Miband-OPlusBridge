@@ -4,8 +4,8 @@
     "version": "6.7.17_a4b586b_260821",
     "sha256": "3bdecd3c3dd84fc1094f2cd6a02a575cbb06df00c764f4c5fe299d0394c1cb30",
     "hashMatches": true,
-    "classesChecked": 22,
-    "methodsChecked": 143,
+    "classesChecked": 25,
+    "methodsChecked": 146,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -15,6 +15,7 @@
       "com.heytap.databaseengine.option.DataReadOption": "classes12.dex",
       "com.heytap.device.data.storage.DataRepositoryHelper$Companion": "classes12.dex",
       "com.heytap.device.data.storage.DataRepositoryHelper": "classes12.dex",
+      "com.heytap.health.base.base.GlobalApplicationHolder": "classes12.dex",
       "com.heytap.databaseengine.model.BreathRate": "classes12.dex",
       "com.heytap.databaseengine.model.HeartRate": "classes12.dex",
       "com.heytap.databaseengine.model.OneTimeSport": "classes12.dex",
@@ -28,6 +29,8 @@
       "com.heytap.health.devicemanager.processor.bean.UserDeviceInfo": "classes13.dex",
       "com.heytap.health.device.tab.controller.DeviceTabAdapterController": "classes13.dex",
       "com.heytap.health.network.core.AutoDisposeObserver": "classes14.dex",
+      "com.oplus.drs.core.DrsCore": "classes4.dex",
+      "com.oplus.drs.core.db.service.CapacityGovernor": "classes4.dex",
       "io.reactivex.rxjava3.core.Observer": "classes7.dex",
       "io.reactivex.rxjava3.core.Observable": "classes7.dex",
       "io.reactivex.rxjava3.observers.DisposableObserver": "classes7.dex"

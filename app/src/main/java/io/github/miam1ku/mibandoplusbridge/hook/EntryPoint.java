@@ -134,9 +134,19 @@ public final class EntryPoint extends XposedModule {
         if (HEALTH_PACKAGE.equals(load.packageName)) {
             probe("OHEALTH_PACKAGE_LOADED process=" + process);
             OHealthLoginDebug.install(load.loader);
+            try {
+                OHealthDrsHook.install(load.loader);
+                probe("OHEALTH_DRS_CONTEXT_HOOK_INSTALLED");
+            } catch (Throwable unavailable) {
+                probe("OHEALTH_DRS_CONTEXT_HOOK_UNAVAILABLE " + unavailable.getClass().getSimpleName());
+            }
             if (load.context != null) {
-                installHealth(load.context, load.loader);
-                return;
+                Context application = load.context.getApplicationContext();
+                if (application instanceof Application) {
+                    load.context = application;
+                    installHealth(application, load.loader);
+                    return;
+                }
             }
             XposedHelpers.findAndHookMethod("com.heytap.health.SportHealthApplication", load.loader,
                     "onCreate", new XC_MethodHook() {
@@ -147,7 +157,9 @@ public final class EntryPoint extends XposedModule {
                             installHealth(context, load.loader);
                         }
                     });
-            whenAttached(load, app -> installHealth(app, load.loader));
+            // Application.attach runs before ActivityThread publishes its Application context.
+            // The early DRS guard above is safe then; hooks that touch host singletons wait
+            // until Health's onCreate has completed and its application context is usable.
             return;
         }
         whenAttached(load, context -> {

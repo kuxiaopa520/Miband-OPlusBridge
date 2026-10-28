@@ -1,6 +1,6 @@
 # 小米手环 10 与 OPPO 健康共存
 
-本 Fork 基于上游提交 `1ccdda52ec959587c698926e79b73236103c235f`。当前版本 `1.8.7-coexist.2` 增加 OPPO 健康闪退日志导出；共存实现与 `coexist.1` 相同，闪退根因仍待设备崩溃记录确认。
+本 Fork 基于上游提交 `1ccdda52ec959587c698926e79b73236103c235f`。当前版本 `1.8.7-coexist.3` 针对 OPPO 健康 6.7.17 启动时 DRS 的空应用上下文崩溃加入修复，并将 OPPO 的主要 hook 延后到应用初始化完成；保留 `coexist.2` 的崩溃日志导出。
 
 ## 能做到什么
 
@@ -92,3 +92,20 @@ python scripts/check_host_apks.py --oppo 'F:/Downloads/OPPO 健康.apk' --mi 'F:
 `coexist.2` 的日志头会重新读取当前所有权、登记状态和模块版本；旧服务状态标为 `last-direct-status`。导出末尾新增 `OPPO Health Android crash buffer`，通过已授予的 Root 权限读取 OPPO 健康 UID 的 Android crash buffer，最多 240 行、128 KiB。读取有 8 秒超时，临时文件保存在模块私有缓存并在读取后删除。导出不会清除崩溃缓冲区、健康 App 数据或账号。
 
 收集方法：覆盖安装 `coexist.2` → 再打开 OPPO 健康复现闪退 → 回到桥接的「帮助 → 发送调试日志」。如果末尾显示 `HEALTH_CRASH_BUFFER_EMPTY`，说明这次读取没有取得崩溃行；`HEALTH_CRASH_LOG_UNAVAILABLE` 则表示日志读取未完成。此时需要框架日志或 ADB 崩溃记录，不能仅根据镜像接收日志判定原因。
+
+### coexist.3：DRS 空上下文修复
+
+用户 2026-10-29 提供的崩溃缓冲区包含 8 次相同的启动崩溃：`ES#Track` 线程在 `CapacityGovernor.init:204` 对空的应用上下文调用 `getSharedPreferences`。输入日志确认当时 `mode=COEXIST registered=true coexistReady=true`，因此旧 `last-direct-status` 不能解释这次闪退。
+
+对提供的 OPPO APK 定点反编译后确认：`TrackApiImpl.checkInit` → `TrackApi.staticInit` → 本地 DRS → `DrsCore.initCapacityGovernor` → `CapacityGovernor.init`；最后一步直接使用 `context.getApplicationContext().getSharedPreferences(...)`，没有空值处理。DRS 的存储上下文可能来自 `createDeviceProtectedStorageContext()`。原模块在 `Application.attach` 完成后即加载会访问宿主单例的 hook，此时应用上下文尚可能未由 Android 发布；这属于可能影响触发的启动时序因素，尚未在用户设备上单独复现排除。
+
+修复包含两项：
+
+- 在上游 `DrsCore.init(Context)` 入口、DRS 缓存应用上下文之前，只对 `getApplicationContext()` 返回空的上下文包装应用查找结果，使用 OPPO 自己的 `GlobalApplicationHolder` 中已附加的 `Application`。其文件、数据库及存储保护域继续委托原存储上下文；健康的数据文件不在此处更换。
+- 提前安装这一个上下文防护 hook，其余 OPPO hook 等 `SportHealthApplication.onCreate` 成功返回后再加载。账号恢复改为安装后主动调度，兼顾原有热重载。
+
+Android 环境回归测试使用真实 `ContextWrapper` 和设备保护存储上下文，重现 APK 中的两步空指针调用；同时检查修复后可读取设置、原存储域保持、正常上下文保持原样。测试验证该故障模式，不等同于用户手机上的完整 OPPO App 启动验证。
+
+`coexist.3` 全部 363 项单元测试通过。提供的 OPPO APK 静态核对扩展为 25 个类、146 个方法契约，包含实际 hook 的 `DrsCore.init(Context)`、崩溃位置的 `CapacityGovernor.init(...)` 和应用上下文来源；小米 APK 的 6 个类、15 个方法契约仍通过。Robolectric 仅作为回归测试依赖，不随模块安装包交付。
+
+安装 `coexist.3` 后手动强停 OPPO 健康再重新打开，以清除此前进程中可能留下的 DRS 半初始化状态。修复入口实际执行时，导出日志会出现 `OHEALTH_DRS_CONTEXT_REPAIRED`。崩溃缓冲区会保留旧记录，复测时需要对照新时间戳。

@@ -7,6 +7,15 @@
     "version": "6.7.17_a4b586b_260821",
     "sha256": "3bdecd3c3dd84fc1094f2cd6a02a575cbb06df00c764f4c5fe299d0394c1cb30",
     "classes": {
+      "com.oplus.drs.core.DrsCore": [
+        "init(Landroid/content/Context;)V"
+      ],
+      "com.oplus.drs.core.db.service.CapacityGovernor": [
+        "init(Landroid/content/Context;Lcom/oplus/drs/core/db/service/CapacityGovernor$StorageQuotaProvider;Lcom/oplus/drs/core/db/service/IngestRepository;)V"
+      ],
+      "com.heytap.health.base.base.GlobalApplicationHolder": [
+        "getAppContext()Landroid/content/Context;"
+      ],
       "com.heytap.device.data.storage.DataRepositoryHelper": [],
       "com.heytap.device.data.storage.DataRepositoryHelper$Companion": [
         "getDbApi()",
