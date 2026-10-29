@@ -4,8 +4,8 @@
     "version": "6.10.12_5de1312_261026",
     "sha256": "6e22e463e4c531c3f0f25757f2d1a64293f06e51ea9086a7504bb1cd70640905",
     "hashMatches": true,
-    "classesChecked": 66,
-    "methodsChecked": 262,
+    "classesChecked": 67,
+    "methodsChecked": 264,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -57,6 +57,7 @@
       "com.heytap.health.sleep.SleepHistoryActivity": "classes14.dex",
       "com.heytap.health.stress.ui.StressHistoryActivity": "classes14.dex",
       "com.heytap.sports.record.list.SportRecordListActivity": "classes2.dex",
+      "iz0.a": "classes2.dex",
       "com.oplus.drs.core.DrsCore": "classes4.dex",
       "com.oplus.mydevices.sdk.DeviceInfoManager": "classes4.dex",
       "com.oplus.mydevices.sdk.device.BatteryInfo": "classes4.dex",
@@ -76,7 +77,7 @@
       "com.heytap.databaseengine.api.SportHealthDataAPI": "classes9.dex",
       "com.heytap.databaseengine.apiv2.c": "classes9.dex"
     },
-    "fieldsChecked": 24,
+    "fieldsChecked": 30,
     "passed": true
   },
   {
@@ -84,8 +85,8 @@
     "version": "3.59.1",
     "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
     "hashMatches": true,
-    "classesChecked": 19,
-    "methodsChecked": 35,
+    "classesChecked": 25,
+    "methodsChecked": 46,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -97,8 +98,14 @@
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase$Companion": "classes10.dex",
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase": "classes10.dex",
       "com.xiaomi.fit.fitness.persist.db.internal.SportReportEntity": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.DeviceBasicStatusDataHandler": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.DeviceModel": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.export.WearableDeviceManager": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.WearableDeviceManagerImpl": "classes10.dex",
       "com.xiaomi.fitness.device.manager.export.WearableProductManager": "classes10.dex",
       "com.xiaomi.fitness.device.manager.WearableProductManagerImpl": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.bean.BatteryInfo": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.bean.DeviceInfo": "classes10.dex",
       "com.xiaomi.fitness.device.manager.bean.Product": "classes10.dex",
       "com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt": "classes10.dex",
       "com.xiaomi.fitness.device.manager.export.WearableProductManager$Companion": "classes10.dex",
@@ -109,7 +116,7 @@
       "com.xiaomi.fit.data.common.data.sport.SportBasicReport": "classes9.dex",
       "com.xiaomi.fit.device.extensions.DeviceModelExtKt": "classes9.dex"
     },
-    "fieldsChecked": 1,
+    "fieldsChecked": 3,
     "passed": true
   }
 ]

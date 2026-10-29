@@ -193,6 +193,11 @@ public final class EntryPoint extends XposedModule {
                 probe("MI_MIRROR_HOOK_UNAVAILABLE");
             }
             try {
+                MiFitnessBatteryHook.install(context, load.loader);
+            } catch (Throwable incompatible) {
+                probe("MI_BATTERY_HOOK_UNAVAILABLE");
+            }
+            try {
                 MiFitnessHistoryReader.install(context, load.loader);
             } catch (Throwable incompatible) {
                 probe("MI_HISTORY_READER_UNAVAILABLE");

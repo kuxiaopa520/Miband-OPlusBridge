@@ -11,4 +11,9 @@ public final class BridgeApplication extends Application {
         // Content providers open preferences before Application.onCreate runs.
         LegacyPrefsMigration.run(base);
     }
+
+    @Override public void onCreate() {
+        super.onCreate();
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.schedule(this);
+    }
 }

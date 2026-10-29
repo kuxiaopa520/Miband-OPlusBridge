@@ -40,4 +40,40 @@ public final class LocalPrefsFileTest {
         LocalPrefs.Stored stored = LocalPrefs.readStored(new java.io.File(folder.getRoot(), "absent.json"));
         assertFalse(stored.present);
     }
+
+    @Test public void uiAndBackendEditorsPreserveEachOthersKeysAndExplicitRemovals() throws Exception {
+        java.io.File file = folder.newFile("band-state.json");
+        assertTrue(LocalPrefs.writeJson(file, new JSONObject().put("battery", 85).put("obsolete", true)));
+        var constructor = LocalPrefs.class.getDeclaredConstructor(java.io.File.class, JSONObject.class);
+        constructor.setAccessible(true);
+        LocalPrefs ui = constructor.newInstance(file, LocalPrefs.readStored(file).json);
+        LocalPrefs backend = constructor.newInstance(file, LocalPrefs.readStored(file).json);
+        var uiEdit = ui.edit().putLong("revision", 8).remove("obsolete");
+        assertTrue(backend.edit().putInt("battery", 80).commit());
+        assertTrue(uiEdit.commit());
+        JSONObject merged = LocalPrefs.readStored(file).json;
+        assertEquals(80, merged.getInt("battery"));
+        assertEquals(8, merged.getLong("revision"));
+        assertFalse(merged.has("obsolete"));
+        assertTrue(backend.edit().putBoolean("charging", true).commit());
+        assertEquals(8, LocalPrefs.readStored(file).json.getLong("revision"));
+        assertTrue(uiEdit.commit());
+        assertTrue(LocalPrefs.readStored(file).json.getBoolean("charging"));
+    }
+
+    @Test public void simultaneousBatteryAndImageChangesEachAdvanceTheDeviceRevision() throws Exception {
+        java.io.File file = folder.newFile("band-state.json");
+        assertTrue(LocalPrefs.writeJson(file, new JSONObject().put("revision", 7).put("battery", 85)));
+        var constructor = LocalPrefs.class.getDeclaredConstructor(java.io.File.class, JSONObject.class);
+        constructor.setAccessible(true);
+        LocalPrefs image = constructor.newInstance(file, LocalPrefs.readStored(file).json);
+        LocalPrefs battery = constructor.newInstance(file, LocalPrefs.readStored(file).json);
+        var imageUpdate = image.edit().putLong("revision", 8).putString("image", "real-band");
+        assertTrue(battery.edit().putLong("revision", 8).putInt("battery", 80).commit());
+        assertTrue(imageUpdate.commit());
+        JSONObject merged = LocalPrefs.readStored(file).json;
+        assertEquals(80, merged.getInt("battery"));
+        assertEquals("real-band", merged.getString("image"));
+        assertEquals(9, merged.getLong("revision"));
+    }
 }

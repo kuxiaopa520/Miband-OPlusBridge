@@ -246,6 +246,20 @@ public final class OHealthDeviceHook {
     }
 
     private static void installNativePanel610(ClassLoader loader) {
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceDetailsPanelActivity", loader,
+                "C6", android.widget.LinearLayout.class, boolean.class, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) { compactPanel610(param.thisObject); }
+                });
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceDetailsViewModel", loader,
+                "v", int.class, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (!Integer.valueOf(1).equals(param.args[0])) return;
+                        Bundle shown = liveSnapshot();
+                        if (shown == null || !ourMac(XposedHelpers.getObjectField(param.thisObject, "m"))) return;
+                        patchPanelBattery610(param.getResult(), shown);
+                        if (shown.getInt("battery", -1) >= 0) XposedHelpers.setIntField(param.thisObject, "y", shown.getInt("battery"));
+                    }
+                });
         XC_MethodHook image = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) {
                 if (!(param.thisObject instanceof android.view.ViewGroup view) || !selectedPanel(view)) return;
@@ -262,6 +276,7 @@ public final class OHealthDeviceHook {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (param.args[0] instanceof List<?> supplied) param.args[0] = panelRows610(param.thisObject, supplied);
             }
+            @Override protected void afterHookedMethod(MethodHookParam param) { compactPanel610(param.thisObject); }
         };
         XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceDetailsActivity", loader,
                 "u6", List.class, rows);
@@ -277,7 +292,7 @@ public final class OHealthDeviceHook {
         XposedHelpers.findAndHookMethod(viewModel, loader, "u", String.class, boolean.class, boolean.class,
                 new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
-                        applyPanelState610(param.thisObject);
+                        if (applyPanelState610(param.thisObject)) synchronized (PANEL_MODELS) { PANEL_MODELS.add(param.thisObject); }
                     }
                 });
         XposedHelpers.findAndHookMethod(viewModel, loader, "w", int.class, String.class, new XC_MethodHook() {
@@ -327,12 +342,41 @@ public final class OHealthDeviceHook {
                 XposedHelpers.findField(row.getClass(), "j").set(row, "");
                 XposedHelpers.setBooleanField(row, "k", false);
             }
+            if (type == 1) patchPanelBattery610(row, shown);
             kept.add(row);
         }
         return kept;
     }
 
     private static final Set<android.view.ViewGroup> PANEL_IMAGES = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private static final Set<Object> PANEL_MODELS = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    private static void compactPanel610(Object panel) {
+        if (!(panel instanceof android.app.Activity activity) || !panel.getClass().getName().equals(
+                "com.heytap.health.linkage.ui.DeviceDetailsPanelActivity") || !ourMac(XposedHelpers.getObjectField(panel, "t"))) return;
+        var config = activity.getResources().getConfiguration();
+        if (config.orientation != android.content.res.Configuration.ORIENTATION_PORTRAIT || config.smallestScreenWidthDp >= 600) return;
+        Object supplied = XposedHelpers.getObjectField(panel, "H");
+        if (!(supplied instanceof android.view.ViewGroup sheet)) return;
+        int contentId = activity.getResources().getIdentifier("device_content", "id", HOST);
+        int listId = activity.getResources().getIdentifier("list_host", "id", HOST);
+        if (!(activity.findViewById(contentId) instanceof android.widget.LinearLayout content)) return;
+        Object list = XposedHelpers.getObjectField(panel, "u");
+        OHealthPanelLayout.compact(sheet, content, activity.findViewById(listId), list instanceof android.view.View view ? view : null);
+    }
+
+    /** The host uses max(previous, current), which prevents a decreasing band battery from appearing. */
+    static void patchPanelBattery610(Object row, Bundle shown) throws IllegalAccessException {
+        int battery = shown.getInt("battery", -1);
+        if (row == null || battery < 0 || battery > 100) return;
+        Object links = XposedHelpers.getObjectField(row, "c");
+        if (!(links instanceof List<?> values)) return;
+        for (Object value : values) {
+            XposedHelpers.setIntField(value, "a", battery);
+            XposedHelpers.findField(value.getClass(), "b").set(value, battery + "%");
+            XposedHelpers.setBooleanField(value, "c", shown.getBoolean("charging", false));
+        }
+    }
 
     private static boolean selectedPanel(android.view.ViewGroup view) {
         Context context = view.getContext();
@@ -592,6 +636,15 @@ public final class OHealthDeviceHook {
                     snapshot = result;
                     if (modern) for (android.view.ViewGroup view : List.copyOf(PANEL_IMAGES)) {
                         if (selectedPanel(view)) OHealthPanelImage.show(view, imageUri());
+                    }
+                    if (modern && (previous == null || previous.getInt("battery", -1) != result.getInt("battery", -1)
+                            || previous.getBoolean("charging") != result.getBoolean("charging")
+                            || previous.getBoolean("connected") != result.getBoolean("connected"))) {
+                        List<Object> models;
+                        synchronized (PANEL_MODELS) { models = List.copyOf(PANEL_MODELS); }
+                        for (Object model : models) if (ourMac(XposedHelpers.getObjectField(model, "m"))) {
+                            XposedHelpers.callMethod(model, "w", result.getBoolean("connected") ? 102 : 103, result.getString("mac"));
+                        }
                     }
                     if (result.getBoolean("nativeControls") && (previous == null || !previous.getBoolean("nativeControls"))
                             && "com.heytap.health:transport".equals(android.app.Application.getProcessName())) {

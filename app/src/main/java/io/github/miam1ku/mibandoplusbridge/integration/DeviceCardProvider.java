@@ -90,6 +90,7 @@ public final class DeviceCardProvider extends ContentProvider {
         MatrixCursor result = new MatrixCursor(requested, 1);
         result.setNotificationUri(getContext().getContentResolver(), URI);
         var state = state();
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(getContext());
         if (!state.getBoolean("registered", false)) return result;
         // When Health already placed this band in device space, the bridge row stays out.
         if (spaceYielded()) return result;
@@ -259,6 +260,7 @@ public final class DeviceCardProvider extends ContentProvider {
         if (!"bandDisplay".equals(method)) throw new SecurityException("DEVICE_CARD_READ_ONLY");
         HostKeepAlive.ensureBridge(getContext());
         var state = state();
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(getContext());
         if (state.getBoolean("registered", false)) io.github.miam1ku.mibandoplusbridge.data.DeviceImageStore.requestRefresh(getContext());
         Bundle display = new Bundle();
         boolean registered = state.getBoolean("registered", false);

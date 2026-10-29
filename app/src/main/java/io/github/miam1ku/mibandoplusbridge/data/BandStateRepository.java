@@ -157,6 +157,24 @@ public final class BandStateRepository {
         }
     }
 
+    /** Battery updates do not imply a Bluetooth connection change. Lower levels are newer too. */
+    public void recordCompanionBattery(String address, int battery, int chargerState) {
+        if (!new OwnershipController(context).coexistReady() || battery < 0 || battery > 100) return;
+        synchronized (STATE_LOCK) {
+            if (!isRegistered() || !MacIds.same(address(), address)) return;
+            LocalPrefs state = state();
+            boolean charging = chargerState >= 1 && chargerState <= 3 ? chargerState == 1
+                    : state.getBoolean("charging", false);
+            boolean changed = battery != state.getInt("battery", -1) || charging != state.getBoolean("charging", false);
+            var editor = state.edit().putInt("battery", battery).putBoolean("charging", charging)
+                    .putLong("batteryAtMs", System.currentTimeMillis());
+            if (changed) editor.putLong("lastUpdateMs", System.currentTimeMillis())
+                    .putLong("revision", state.getLong("revision", 0) + 1);
+            if (!editor.commit()) throw new IllegalStateException("BAND_STATE_STORAGE_FAILED");
+            if (changed) context.getContentResolver().notifyChange(DeviceCardProvider.URI, null);
+        }
+    }
+
     /** The body picture changed. Bump the card revision so device space reads the new URI. */
     public void noteDeviceImage() {
         synchronized (STATE_LOCK) {

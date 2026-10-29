@@ -47,6 +47,11 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
     @Override public synchronized Bundle call(String method, String arg, Bundle input) {
         boolean self = HostIdentity.isSelf();
         if (!self) HostIdentity.requireMiCaller(getContext());
+        if ("wake".equals(method)) {
+            if (!self) throw new SecurityException("SYNC_WAKE_SELF_REQUIRED");
+            io.github.miam1ku.mibandoplusbridge.service.CoexistSync.requestInBackend(getContext());
+            return status("MI_SILENT_WAKE_REQUESTED");
+        }
         if ("historyStatus".equals(method)) {
             if (!self) throw new SecurityException("HISTORY_SELF_REQUIRED");
             return historyStatus();
@@ -119,6 +124,15 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
                 return historyStatus();
             }
             BandStateRepository repository = new BandStateRepository(getContext());
+            if ("battery".equals(method)) {
+                if (!MacIds.same(binding.address(), input.getString("address", ""))) {
+                    throw new SecurityException("MI_MIRROR_DEVICE_MISMATCH");
+                }
+                int battery = input.getInt("battery", -1);
+                if (battery < 0 || battery > 100) return status("MI_MIRROR_BATTERY_UNKNOWN");
+                repository.recordCompanionBattery(binding.address(), battery, input.getInt("chargerState", 0));
+                return status("MI_MIRROR_BATTERY_SAVED");
+            }
             if ("state".equals(method)) {
                 if (!MacIds.same(binding.address(), input.getString("address", ""))) {
                     throw new SecurityException("MI_MIRROR_DEVICE_MISMATCH");

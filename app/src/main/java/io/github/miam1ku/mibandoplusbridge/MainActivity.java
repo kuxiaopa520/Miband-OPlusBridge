@@ -345,6 +345,11 @@ public final class MainActivity extends AppCompatActivity {
         ensureCallPermissions();
     }
 
+    @Override protected void onStop() {
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.resumeAfterUi(this);
+        super.onStop();
+    }
+
     @Override protected void onDestroy() {
         getContentResolver().unregisterContentObserver(observer);
         getContentResolver().unregisterContentObserver(deviceObserver);

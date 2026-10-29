@@ -33,9 +33,15 @@ public class CoexistSyncTest {
         assertNotNull(job); assertTrue(job.isPersisted()); assertTrue(job.isPeriodic());
         CoexistSync.schedule(context);
         assertEquals(1, jobs.getAllPendingJobs().size());
+        CoexistSync.resumeAfterUi(context);
+        var resume = jobs.getPendingJob(CoexistSync.RESUME_JOB_ID);
+        assertNotNull(resume); assertTrue(resume.isPersisted()); assertFalse(resume.isPeriodic());
+        CoexistSync.resumeAfterUi(context);
+        assertEquals(2, jobs.getAllPendingJobs().size());
         Shadows.shadowOf(users).setUserUnlocked(false);
         CoexistSync.schedule(context);
         assertNull(jobs.getPendingJob(CoexistSync.JOB_ID));
+        assertNull(jobs.getPendingJob(CoexistSync.RESUME_JOB_ID));
         assertNull(OwnershipController.syncWakeCommand("/data/app/x/base.apk; reboot"));
         assertTrue(OwnershipController.syncWakeCommand("/data/app/module/base.apk").endsWith(RootSyncWake.class.getName()));
     }

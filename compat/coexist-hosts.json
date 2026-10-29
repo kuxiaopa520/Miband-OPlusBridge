@@ -212,9 +212,26 @@
     "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
     "classes": {
       "com.mi.health.search.SettingSearchProvider": [],
+      "com.xiaomi.fitness.device.manager.export.WearableDeviceManager": [],
+      "com.xiaomi.fitness.device.manager.DeviceModel": [
+        "getDeviceInfo()Lcom/xiaomi/fitness/device/manager/bean/DeviceInfo;"
+      ],
+      "com.xiaomi.fitness.device.manager.WearableDeviceManagerImpl": [
+        "getDeviceModel(Ljava/lang/String;)Lcom/xiaomi/fitness/device/manager/export/WearableDeviceModel;"
+      ],
+      "com.xiaomi.fitness.device.manager.bean.DeviceInfo": [
+        "getDid()Ljava/lang/String;", "getMac()Ljava/lang/String;",
+        "getBatteryInfo()Lcom/xiaomi/fitness/device/manager/bean/BatteryInfo;",
+        "setBatteryInfo(Lcom/xiaomi/fitness/device/manager/bean/BatteryInfo;)V", "setBattery(I)V"
+      ],
+      "com.xiaomi.fitness.device.manager.bean.BatteryInfo": ["getBattery()I", "getChargeStatus()I"],
+      "com.xiaomi.fitness.device.manager.DeviceBasicStatusDataHandler": [
+        "syncBattery(Ljava/lang/String;Lcom/xiaomi/fitness/device/contact/export/DeviceSyncCallback;)V"
+      ],
       "com.xiaomi.fitness.device.manager.export.WearableProductManager": [],
       "com.xiaomi.fitness.device.manager.export.WearableProductManager$Companion": [],
       "com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt": [
+        "getInstance(Lcom/xiaomi/fitness/device/manager/export/WearableDeviceManager$Companion;)Lcom/xiaomi/fitness/device/manager/export/WearableDeviceManager;",
         "getInstance(Lcom/xiaomi/fitness/device/manager/export/WearableProductManager$Companion;)Lcom/xiaomi/fitness/device/manager/export/WearableProductManager;"
       ],
       "com.xiaomi.fitness.device.manager.WearableProductManagerImpl": [
@@ -272,6 +289,12 @@
       ]
     },
     "fields": {
+      "com.xiaomi.fitness.device.manager.DeviceBasicStatusDataHandler": [
+        "INSTANCE:Lcom/xiaomi/fitness/device/manager/DeviceBasicStatusDataHandler;"
+      ],
+      "com.xiaomi.fitness.device.manager.export.WearableDeviceManager": [
+        "Companion:Lcom/xiaomi/fitness/device/manager/export/WearableDeviceManager$Companion;"
+      ],
       "com.xiaomi.fitness.device.manager.export.WearableProductManager": [
         "Companion:Lcom/xiaomi/fitness/device/manager/export/WearableProductManager$Companion;"
       ]

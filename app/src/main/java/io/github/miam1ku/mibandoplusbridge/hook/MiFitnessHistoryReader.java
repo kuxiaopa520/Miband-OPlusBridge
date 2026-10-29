@@ -79,6 +79,7 @@ final class MiFitnessHistoryReader {
         Bundle job = null;
         try {
             if (autoRequested) {
+                MiFitnessBatteryHook.requestSnapshot(context, loader);
                 MiFitnessDeviceImage.request(context, loader);
                 context.getContentResolver().call(MiFitnessMirrorProvider.URI, "historyAuto", null, null);
                 autoRequested = false;

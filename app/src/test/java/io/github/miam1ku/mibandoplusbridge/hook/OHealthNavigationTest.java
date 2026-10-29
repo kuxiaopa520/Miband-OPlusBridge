@@ -77,9 +77,30 @@ public final class OHealthNavigationTest {
     }
     public static final class PanelRow {
         public int a, f;
+        public final java.util.LinkedList<Battery> c = new java.util.LinkedList<>();
         public String i = "https://example.test/oppo-watch.png", j = "oppo-watch-3d";
         public boolean k = true;
         PanelRow(int type, int action) { a = type; f = action; }
+    }
+
+    public static final class Battery {
+        public int a = 85;
+        public String b = "85%";
+        public boolean c;
+    }
+
+    @Test public void theNativePanelsOlderHigherBatteryCannotWinOverTheNewBandLevel() throws Exception {
+        PanelRow row = new PanelRow(1, 0);
+        Battery battery = new Battery(); row.c.add(battery);
+        Bundle shown = new Bundle(); shown.putInt("battery", 80); shown.putBoolean("charging", true);
+        OHealthDeviceHook.patchPanelBattery610(row, shown);
+        assertEquals(80, battery.a); assertEquals("80%", battery.b); assertTrue(battery.c);
+        shown.putInt("battery", 0); shown.putBoolean("charging", false);
+        OHealthDeviceHook.patchPanelBattery610(row, shown);
+        assertEquals(0, battery.a); assertFalse(battery.c);
+        shown.putInt("battery", -1);
+        OHealthDeviceHook.patchPanelBattery610(row, shown);
+        assertEquals(0, battery.a);
     }
 
     @Test public void controlCenterKeepsTheNativePanelButUsesTheBandImageAndOnlyWorkingActions() throws Exception {

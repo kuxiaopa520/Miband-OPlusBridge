@@ -57,7 +57,10 @@ public final class LocalPrefs {
 
     public final class Editor {
         private final JSONObject next;
+        private final java.util.Set<String> touched = new java.util.HashSet<>();
+        private long baseRevision;
         Editor() {
+            baseRevision = json.optLong("revision", 0);
             try { next = new JSONObject(json.toString()); }
             catch (Exception failed) { throw new IllegalStateException("STATE_COPY_FAILED", failed); }
         }
@@ -65,16 +68,40 @@ public final class LocalPrefs {
         public Editor putString(String key, String value) { return put(key, value); }
         public Editor putInt(String key, int value) { return put(key, value); }
         public Editor putLong(String key, long value) { return put(key, value); }
-        public Editor remove(String key) { next.remove(key); return this; }
+        public Editor remove(String key) { touched.add(key); next.remove(key); return this; }
         private Editor put(String key, Object value) {
+            touched.add(key);
             try { next.put(key, value); return this; }
             catch (Exception failed) { throw new IllegalStateException("STATE_WRITE_FAILED", failed); }
         }
         public boolean commit() {
-            synchronized (LocalPrefs.this) {
-                if (!writeJson(file, next)) return false;
-                json = next;
-                return true;
+            // The UI and :bridge may commit different keys from older snapshots.
+            // Lock a separate file because writeJson atomically replaces the JSON inode.
+            synchronized (LocalPrefs.class) {
+                File parent = file.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs()) return false;
+                try (var channel = java.nio.channels.FileChannel.open(new File(file.getPath() + ".lock").toPath(),
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+                     var lock = channel.lock()) {
+                    JSONObject latest = readStored(file).json;
+                    long currentRevision = latest.optLong("revision", 0);
+                    for (String key : touched) {
+                        if (next.has(key)) latest.put(key, next.get(key));
+                        else latest.remove(key);
+                    }
+                    if ("band-state.json".equals(file.getName()) && touched.contains("revision")
+                            && next.optLong("revision", 0) > baseRevision) {
+                        latest.put("revision", Math.max(currentRevision, baseRevision) + next.getLong("revision") - baseRevision);
+                    }
+                    if (!writeJson(file, latest)) return false;
+                    json = latest;
+                    baseRevision = latest.optLong("revision", 0);
+                    touched.clear();
+                    return true;
+                } catch (Exception failed) {
+                    note("LOCAL_PREFS_WRITE_FAILED " + file.getName(), failed);
+                    return false;
+                }
             }
         }
     }

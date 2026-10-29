@@ -62,7 +62,7 @@
         </activity>
         <service android:name=".service.BandLiveService" android:exported="false"
             android:foregroundServiceType="connectedDevice" android:stopWithTask="false" />
-        <service android:name=".service.CoexistSyncJob" android:exported="true"
+        <service android:name=".service.CoexistSyncJob" android:exported="true" android:process=":bridge"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".service.BandTileService" android:exported="true"
             android:icon="@drawable/ic_qs_band" android:label="手环"
@@ -100,7 +100,7 @@
             android:exported="true" android:grantUriPermissions="true" />
         <provider android:name=".integration.HealthQueueProvider"
             android:authorities="io.github.miam1ku.mibandoplusbridge.health"
-            android:exported="true" android:directBootAware="false"
+            android:exported="true" android:directBootAware="false" android:process=":bridge"
             android:grantUriPermissions="false" />
         <provider android:name=".integration.CredentialProvider"
             android:authorities="io.github.miam1ku.mibandoplusbridge.credentials"
@@ -108,7 +108,7 @@
             android:grantUriPermissions="false" />
         <provider android:name=".integration.MiFitnessMirrorProvider"
             android:authorities="io.github.miam1ku.mibandoplusbridge.mi-mirror"
-            android:exported="true" android:directBootAware="false"
+            android:exported="true" android:directBootAware="false" android:process=":bridge"
             android:grantUriPermissions="false" />
         <provider android:name=".integration.HostNotifyProvider"
             android:authorities="io.github.miam1ku.mibandoplusbridge.notify"
