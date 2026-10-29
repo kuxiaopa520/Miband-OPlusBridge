@@ -20,6 +20,7 @@ public final class HealthQueueProvider extends ContentProvider {
     public static final String AUTHORITY = "io.github.miam1ku.mibandoplusbridge.health";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/pending");
     public static final Uri RECORDS_URI = Uri.parse("content://" + AUTHORITY + "/records");
+    public static final Uri BULK_URI = Uri.parse("content://" + AUTHORITY + "/pending-bulk");
     public static final Uri CAPACITY_URI = Uri.parse("content://" + AUTHORITY + "/capacity");
     public static final Uri PROGRESS_URI = Uri.parse("content://" + AUTHORITY + "/import-progress");
     private static final String HOST = "com.heytap.health";
@@ -53,7 +54,7 @@ public final class HealthQueueProvider extends ContentProvider {
     }
 
     private static boolean recordsUri(Uri uri) {
-        if (URI.equals(uri)) return false;
+        if (URI.equals(uri) || BULK_URI.equals(uri)) return false;
         if (uri == null || !RECORDS_URI.equals(uri.buildUpon().clearQuery().build())
                 || !java.util.Set.of("after").containsAll(uri.getQueryParameterNames())
                 || uri.getQueryParameters("after").size() > 1) {
@@ -95,7 +96,7 @@ public final class HealthQueueProvider extends ContentProvider {
             if (!"account=?".equals(selection) || selectionArgs == null || selectionArgs.length != 1) {
                 throw new IllegalArgumentException("HEALTH_ACCOUNT_SELECTION_REQUIRED");
             }
-            cursor = store.pending(selectionArgs[0]);
+            cursor = BULK_URI.equals(uri) ? store.pendingBulk(selectionArgs[0]) : store.pending(selectionArgs[0]);
         }
         cursor.setNotificationUri(getContext().getContentResolver(), history ? RECORDS_URI : URI);
         return cursor;
@@ -292,6 +293,7 @@ public final class HealthQueueProvider extends ContentProvider {
     private void notifyRecordsChanged() {
         getContext().getContentResolver().notifyChange(URI, null);
         getContext().getContentResolver().notifyChange(RECORDS_URI, null);
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(getContext());
     }
 
     private Bundle status(String code) {

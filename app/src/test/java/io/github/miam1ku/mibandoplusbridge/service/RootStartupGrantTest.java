@@ -12,7 +12,7 @@ public class RootStartupGrantTest {
         assertEquals("CLASSPATH=/data/app/~~a1B2==/io.github.miam1ku.mibandoplusbridge-x_Y==/base.apk"
                         + " /system/bin/app_process /system/bin"
                         + " io.github.miam1ku.mibandoplusbridge.service.RootStartupGrant"
-                        + " io.github.miam1ku.mibandoplusbridge com.heytap.health",
+                        + " io.github.miam1ku.mibandoplusbridge com.heytap.health com.mi.health",
                 OwnershipController.startupGrantCommand(
                         "/data/app/~~a1B2==/io.github.miam1ku.mibandoplusbridge-x_Y==/base.apk"));
     }

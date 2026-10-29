@@ -121,6 +121,9 @@ public final class OHealthHealthImportHook {
             hook.installTokenFallback();
         }
         installed = hook;
+        try {
+            HostSyncWake.install(context, Class.forName("com.heytap.health.WirelessEntranceProvider", false, loader), hook::request);
+        } catch (ReflectiveOperationException unavailable) { HookRuntime.log("OHEALTH_SILENT_WAKE_UNAVAILABLE"); }
         hook.request();
     }
 
@@ -764,14 +767,7 @@ public final class OHealthHealthImportHook {
             requireAccount(account, epoch);
             List<HealthRecord> page = pending(account);
             if (page.isEmpty()) return false;
-            Map<Batch, List<HealthRecord>> groups = new LinkedHashMap<>();
-            for (HealthRecord record : page) {
-                OHealthHealthModels.Kind kind = OHealthHealthModels.Kind.of(record);
-                kind.type(record); // Reject unsupported modes before any write in this page.
-                ZoneId zone = record.timezone == null ? ZoneId.systemDefault() : ZoneId.of(record.timezone);
-                LocalDate day = Instant.ofEpochMilli(record.startMs).atZone(zone).toLocalDate();
-                groups.computeIfAbsent(new Batch(kind, day), unused -> new ArrayList<>()).add(record);
-            }
+            Map<Batch, List<HealthRecord>> groups = pointBatches(page, host.modern);
             int acknowledged = 0;
             int released = 0;
             boolean retained = false;
@@ -887,11 +883,13 @@ public final class OHealthHealthImportHook {
 
     private List<HealthRecord> pending(String account) throws Exception {
         List<HealthRecord> page = new ArrayList<>();
-        try (Cursor cursor = context.getContentResolver().query(HealthQueueProvider.URI, COLUMNS,
+        try (Cursor cursor = context.getContentResolver().query(host.modern ? HealthQueueProvider.BULK_URI : HealthQueueProvider.URI, COLUMNS,
                 "account=?", new String[]{account}, null)) {
             if (cursor == null) throw new IllegalStateException("IMPORT_QUEUE_UNAVAILABLE");
             while (cursor.moveToNext()) {
-                if (page.size() >= 200) throw new IllegalStateException("IMPORT_QUEUE_CONTRACT");
+                if (page.size() >= (host.modern ? io.github.miam1ku.mibandoplusbridge.data.HealthRecordStore.BULK_PAGE_SIZE : 200)) {
+                    throw new IllegalStateException("IMPORT_QUEUE_CONTRACT");
+                }
                 HealthRecord record = HealthRecord.fromJson(new JSONObject(cursor.getString(2)));
                 if (!record.recordId.equals(cursor.getString(0)) || record.revision != cursor.getInt(1)) {
                     throw new IllegalStateException("IMPORT_QUEUE_REVISION_MISMATCH");
@@ -930,7 +928,21 @@ public final class OHealthHealthImportHook {
         }
     }
 
-    private record Batch(OHealthHealthModels.Kind kind, LocalDate date) { }
+    static record Batch(OHealthHealthModels.Kind kind, String device, String period) { }
+
+    static Map<Batch, List<HealthRecord>> pointBatches(List<HealthRecord> page, boolean modern) {
+        Map<Batch, List<HealthRecord>> groups = new LinkedHashMap<>();
+        for (HealthRecord record : page) {
+            OHealthHealthModels.Kind kind = OHealthHealthModels.Kind.of(record);
+            kind.type(record);
+            ZoneId zone = record.timezone == null ? ZoneId.systemDefault() : ZoneId.of(record.timezone);
+            LocalDate day = Instant.ofEpochMilli(record.startMs).atZone(zone).toLocalDate();
+            String period = modern ? day.with(java.time.temporal.TemporalAdjusters.previousOrSame(
+                    java.time.DayOfWeek.MONDAY)).toString() : day.toString();
+            groups.computeIfAbsent(new Batch(kind, record.deviceId, period), unused -> new ArrayList<>()).add(record);
+        }
+        return groups;
+    }
 
     /** Resolve the entire supported host surface before subscribing or writing anything. */
     static final class HostContract {

@@ -12,6 +12,9 @@
       "com.heytap.health.network.core.AutoDisposeObserver"
     ],
     "classes": {
+      "com.heytap.health.linkage.ui.DeviceImageView": [
+        "f(ILjava/lang/String;Ljava/lang/String;)V", "g(Ljava/lang/String;Ljava/lang/String;)V"
+      ],
       "com.heytap.health.base.sp.k0": ["j()Lcom/heytap/health/base/sp/k0;", "p(Ljava/lang/String;)Ljava/lang/String;"],
       "com.heytap.databaseengine.api.SportHealthDataAPI": ["getInstance()Lcom/heytap/databaseengine/api/ISportHealthDataAPI;"],
       "io.reactivex.rxjava3.disposables.Disposable": ["dispose()V"],
@@ -123,6 +126,9 @@
       ]
     },
     "fields": {
+      "com.heytap.health.linkage.ui.DeviceImageView": [
+        "j:Landroid/widget/ImageView;", "k:Lcom/oplusos/vfxmodelviewer/view/ModelViewer;", "l:Lcom/oplusos/vfxmodelviewer/view/ModelScene;"
+      ],
       "xs.l": ["managerApi:Lys/e;"],
       "fs.z": ["u0:Lkotlin/Lazy;"],
       "com.heytap.health.device.tab.controller.DeviceTabAdapterController": ["v:Ljava/util/ArrayList;"],

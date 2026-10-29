@@ -875,14 +875,7 @@ public final class MainActivity extends AppCompatActivity {
                 showHistoryImport(reply);
                 historyImport.setEnabled(new OwnershipController(this).coexistReady());
                 if (reply != null && reply.getBoolean("active")) {
-                    Intent oppo = getPackageManager().getLaunchIntentForPackage(HostIdentity.HEALTH_PACKAGE);
-                    Intent mi = getPackageManager().getLaunchIntentForPackage(HostIdentity.MI_PACKAGE);
-                    if (oppo != null && mi != null) {
-                        startActivity(mi);
-                        // A synthetic back stack may defer starting the lower app's process.
-                        main.postDelayed(() -> { if (!isDestroyed()) startActivity(oppo); }, 1000);
-                    } else if (oppo != null) startActivity(oppo);
-                    else launchMiHealth();
+                    io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(this);
                 } else if (reply != null && "MI_HISTORY_OPEN_OPPO".equals(reply.getString("status"))) {
                     Intent oppo = getPackageManager().getLaunchIntentForPackage(HostIdentity.HEALTH_PACKAGE);
                     if (oppo != null) startActivity(oppo);

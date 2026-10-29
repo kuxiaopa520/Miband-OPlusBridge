@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.FileObserver;
 import io.github.miam1ku.mibandoplusbridge.hook.xposed.HookRuntime;
 import io.github.miam1ku.mibandoplusbridge.hook.xposed.XposedHelpers;
 import io.github.miam1ku.mibandoplusbridge.integration.MiFitnessMirrorProvider;
@@ -21,8 +22,12 @@ final class MiFitnessHistoryReader {
     private final ClassLoader loader;
     private final Handler worker;
     private final Runnable work = this::run;
+    private final Runnable poll = this::requestAuto;
     private boolean waitingCapacity;
     private long capacityWakeAt;
+    private boolean autoRequested = true;
+    private FileObserver sourceChanges;
+    private String watchedPath;
 
     private MiFitnessHistoryReader(Context context, ClassLoader loader) {
         this.context = context;
@@ -34,6 +39,10 @@ final class MiFitnessHistoryReader {
         // The device, widget and transport processes must not race the main process's importer.
         if (!"com.mi.health".equals(Application.getProcessName())) return;
         MiFitnessHistoryReader reader = new MiFitnessHistoryReader(context, loader);
+        HookRuntime.track(() -> { if (reader.sourceChanges != null) reader.sourceChanges.stopWatching(); });
+        try {
+            HostSyncWake.install(context, Class.forName("com.mi.health.search.SettingSearchProvider", false, loader), reader::requestAuto);
+        } catch (ReflectiveOperationException unavailable) { HookRuntime.log("MI_SILENT_WAKE_UNAVAILABLE"); }
         HookRuntime.observe(context.getContentResolver(), MiFitnessMirrorProvider.HISTORY_REQUEST_URI, false,
                 new ContentObserver(reader.worker) {
                     @Override public void onChange(boolean selfChange) { reader.schedule(500); }
@@ -51,6 +60,15 @@ final class MiFitnessHistoryReader {
         reader.schedule(5_000); // Also resume a request after either process was restarted.
     }
 
+    private void requestAuto() {
+        worker.post(() -> {
+            if (autoRequested) return;
+            autoRequested = true;
+            worker.removeCallbacks(poll);
+            schedule(2_000);
+        });
+    }
+
     private void schedule(long delay) {
         worker.removeCallbacks(work);
         worker.postDelayed(work, delay);
@@ -60,10 +78,15 @@ final class MiFitnessHistoryReader {
         waitingCapacity = false;
         Bundle job = null;
         try {
+            if (autoRequested) {
+                MiFitnessDeviceImage.request(context, loader);
+                context.getContentResolver().call(MiFitnessMirrorProvider.URI, "historyAuto", null, null);
+                autoRequested = false;
+            }
             for (int page = 0; page < 8; page++) {
                 if (Thread.currentThread().isInterrupted()) return;
                 job = context.getContentResolver().call(MiFitnessMirrorProvider.URI, "historyJob", null, null);
-                if (job == null || !job.containsKey("token")) return;
+                if (job == null || !job.containsKey("token")) { idle(); return; }
                 Class<?> type = Class.forName("com.xiaomi.fit.fitness.persist.db.FitnessDatabase", false, loader);
                 Object companion = XposedHelpers.getStaticObjectField(type, "Companion");
                 Object room = XposedHelpers.callMethod(companion, "getInstance");
@@ -75,13 +98,14 @@ final class MiFitnessHistoryReader {
                     report(job, "MI_HISTORY_SOURCE_ACCOUNT_CHANGED");
                     return;
                 }
+                watchSource(path);
                 Bundle batch;
                 try (SQLiteDatabase db = SQLiteDatabase.openDatabase(path, null,
                         SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS)) {
                     batch = readPage(db, job);
                 }
                 Bundle reply = context.getContentResolver().call(MiFitnessMirrorProvider.URI, "historyPage", null, batch);
-                if (reply == null || !reply.getBoolean("active")) return;
+                if (reply == null || !reply.getBoolean("active")) { idle(); return; }
                 String status = reply.getString("status", "");
                 if ("MI_HISTORY_OPEN_OPPO_QUEUE_FULL".equals(status) || "MI_HISTORY_STORAGE_RETRY".equals(status)) {
                     waitingCapacity = true;
@@ -97,6 +121,24 @@ final class MiFitnessHistoryReader {
             if (job != null && job.containsKey("token")) report(job, code);
             schedule(30_000);
         }
+    }
+
+    private void idle() {
+        worker.removeCallbacks(poll);
+        worker.postDelayed(poll, 60_000);
+    }
+
+    private void watchSource(String path) {
+        if (path.equals(watchedPath)) return;
+        if (sourceChanges != null) sourceChanges.stopWatching();
+        File db = new File(path);
+        sourceChanges = new FileObserver(db.getParentFile(), FileObserver.MODIFY | FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO) {
+            @Override public void onEvent(int event, String name) {
+                if (db.getName().equals(name) || (db.getName() + "-wal").equals(name)) requestAuto();
+            }
+        };
+        sourceChanges.startWatching();
+        watchedPath = path;
     }
 
     static boolean sourceAccountMatches(String path, String account) throws java.io.IOException {

@@ -18,7 +18,7 @@ import java.util.concurrent.Executors;
 /** Downloads the Mi Fitness body picture and keeps the last good file. */
 public final class DeviceImageStore {
     private static final long FRESH_MS = 30L * 24 * 60 * 60 * 1000;
-    private static final long RETRY_MS = 6L * 60 * 60 * 1000;
+    private static final long RETRY_MS = 60_000;
     private static final int MAX_BYTES = 4 * 1024 * 1024;
     private static final int MAX_EDGE = 4096;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
@@ -30,12 +30,16 @@ public final class DeviceImageStore {
     private DeviceImageStore() {}
 
     public static void requestRefresh(Context context) {
+        requestRefresh(context, null);
+    }
+
+    public static void requestRefresh(Context context, String productJson) {
         Context app = context.getApplicationContext();
         if (app == null) app = context;
         Context target = app;
         EXECUTOR.execute(() -> {
             try {
-                if (refreshIfNeeded(target)) new io.github.miam1ku.mibandoplusbridge.data.BandStateRepository(target).noteDeviceImage();
+                if (refreshIfNeeded(target, productJson)) new io.github.miam1ku.mibandoplusbridge.data.BandStateRepository(target).noteDeviceImage();
             } catch (RuntimeException failure) {
                 SessionLog.line(target, "bridge DEVICE_IMAGE_UNAVAILABLE " + failure.getClass().getSimpleName());
             }
@@ -69,6 +73,10 @@ public final class DeviceImageStore {
     }
 
     static boolean refreshIfNeeded(Context context) {
+        return refreshIfNeeded(context, null);
+    }
+
+    private static boolean refreshIfNeeded(Context context, String productJson) {
         UserManager users = context.getSystemService(UserManager.class);
         if (users == null || !users.isUserUnlocked()) return false;
         LocalPrefs state = LocalPrefs.open(context, "band-state");
@@ -86,12 +94,15 @@ public final class DeviceImageStore {
         long lastAttempt = image.getLong("lastAttemptMs", 0);
         boolean attempted = model.equals(image.getString("attemptModel", ""))
                 && sku.equals(image.getString("attemptSku", ""))
-                && samePick;
+                && MiProductImage.PICK.equals(image.getString("attemptPick", ""))
+                && (productJson == null || "live-product".equals(image.getString("attemptSource", "")));
         if (attempted && lastAttempt > 0 && System.currentTimeMillis() - lastAttempt < RETRY_MS) return false;
         image.edit().putLong("lastAttemptMs", System.currentTimeMillis())
-                .putString("attemptModel", model).putString("attemptSku", sku).commit();
+                .putString("attemptModel", model).putString("attemptSku", sku)
+                .putString("attemptPick", MiProductImage.PICK)
+                .putString("attemptSource", productJson == null ? "file" : "live-product").commit();
         try {
-            String config = MiFitnessDatabase.productConfig(context);
+            String config = productJson == null ? MiFitnessDatabase.productConfig(context) : productJson;
             MiProductImage.Choice choice = MiProductImage.choose(config, model, sku);
             if (choice == null) {
                 SessionLog.line(context, "bridge DEVICE_IMAGE_UNAVAILABLE MI_PRODUCT_CONFIG_MISSING");
@@ -151,7 +162,8 @@ public final class DeviceImageStore {
                 throw new IllegalStateException("DEVICE_IMAGE_URL");
             }
             String type = connection.getContentType();
-            if (type == null || !type.toLowerCase(java.util.Locale.ROOT).startsWith("image/")) {
+            if (type != null && !type.toLowerCase(java.util.Locale.ROOT).startsWith("image/")
+                    && !type.toLowerCase(java.util.Locale.ROOT).startsWith("application/octet-stream")) {
                 throw new IllegalStateException("DEVICE_IMAGE_TYPE");
             }
             ByteArrayOutputStream raw = new ByteArrayOutputStream();

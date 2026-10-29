@@ -259,6 +259,7 @@ public final class DeviceCardProvider extends ContentProvider {
         if (!"bandDisplay".equals(method)) throw new SecurityException("DEVICE_CARD_READ_ONLY");
         HostKeepAlive.ensureBridge(getContext());
         var state = state();
+        if (state.getBoolean("registered", false)) io.github.miam1ku.mibandoplusbridge.data.DeviceImageStore.requestRefresh(getContext());
         Bundle display = new Bundle();
         boolean registered = state.getBoolean("registered", false);
         display.putBoolean("registered", registered);

@@ -246,6 +246,18 @@ public final class OHealthDeviceHook {
     }
 
     private static void installNativePanel610(ClassLoader loader) {
+        XC_MethodHook image = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (!(param.thisObject instanceof android.view.ViewGroup view) || !selectedPanel(view)) return;
+                PANEL_IMAGES.add(view);
+                OHealthPanelImage.show(view, imageUri());
+                param.setResult(null);
+            }
+        };
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceImageView", loader,
+                "f", int.class, String.class, String.class, image);
+        XposedHelpers.findAndHookMethod("com.heytap.health.linkage.ui.DeviceImageView", loader,
+                "g", String.class, String.class, image);
         XC_MethodHook rows = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (param.args[0] instanceof List<?> supplied) param.args[0] = panelRows610(param.thisObject, supplied);
@@ -307,8 +319,6 @@ public final class OHealthDeviceHook {
                 shown.getString("mac", ""), String.valueOf(XposedHelpers.getObjectField(panel, "t")))) return supplied;
         ArrayList<Object> kept = new ArrayList<>();
         String image = shown.getString("imageUri", "");
-        if (image.isBlank()) image = "android.resource://com.heytap.mydevices/drawable/"
-                + io.github.miam1ku.mibandoplusbridge.data.BandCatalog.spaceIcon(shown.getString("modelId", ""));
         for (Object row : supplied) {
             int type = XposedHelpers.getIntField(row, "a");
             if (type == 2 && XposedHelpers.getIntField(row, "f") != 4) continue;
@@ -320,6 +330,21 @@ public final class OHealthDeviceHook {
             kept.add(row);
         }
         return kept;
+    }
+
+    private static final Set<android.view.ViewGroup> PANEL_IMAGES = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    private static boolean selectedPanel(android.view.ViewGroup view) {
+        Context context = view.getContext();
+        for (int i = 0; i < 10 && context instanceof android.content.ContextWrapper wrapper; i++) {
+            if (context instanceof android.app.Activity) break;
+            Context next = wrapper.getBaseContext();
+            if (next == context) break;
+            context = next;
+        }
+        if (!(context instanceof android.app.Activity) || !context.getClass().getName().startsWith(
+                "com.heytap.health.linkage.ui.DeviceDetails")) return false;
+        return ourMac(XposedHelpers.getObjectField(context, "t"));
     }
 
     /** 6.10.12 renamed the native panel fields; only the selected bridge band is projected. */
@@ -565,6 +590,9 @@ public final class OHealthDeviceHook {
                 Bundle previous = snapshot;
                 if (result != null) {
                     snapshot = result;
+                    if (modern) for (android.view.ViewGroup view : List.copyOf(PANEL_IMAGES)) {
+                        if (selectedPanel(view)) OHealthPanelImage.show(view, imageUri());
+                    }
                     if (result.getBoolean("nativeControls") && (previous == null || !previous.getBoolean("nativeControls"))
                             && "com.heytap.health:transport".equals(android.app.Application.getProcessName())) {
                         schedulePolicy(500);

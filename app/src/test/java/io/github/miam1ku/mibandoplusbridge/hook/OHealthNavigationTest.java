@@ -102,7 +102,7 @@ public final class OHealthNavigationTest {
             assertSame(original, OHealthDeviceHook.panelRows610(other, original));
             band.putString("imageUri", "");
             OHealthDeviceHook.panelRows610(new Panel(), original);
-            assertEquals("android.resource://com.heytap.mydevices/drawable/default_wristband", picture.i);
+            assertEquals("", picture.i);
         } finally { state.set(null, previous); }
     }
 

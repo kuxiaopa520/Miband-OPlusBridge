@@ -184,4 +184,36 @@ public final class HealthHistoryImportTest {
             assertEquals(1, status.count());
         } finally { reader.shutdownNow(); }
     }
+
+    @Test public void bulkPagesAreLargerButStayWithinTheByteBudgetAndEveryReceiptIsRetained() throws Exception {
+        var rows = new ArrayList<io.github.miam1ku.mibandoplusbridge.protocol.BandHistoryParser.Measurement>();
+        for (int i = 0; i < 1500; i++) rows.addAll(parser.parse("hr_record", "heart_rate",
+                1700000000L + i * 60, "{\"bpm\":62}", 0, "UTC", true));
+        try (HealthRecordStore store = new HealthRecordStore(context)) {
+            store.confirmAccountHash(account);
+            store.importMissing(account, rows);
+            var seen = new java.util.HashSet<String>();
+            int pages = 0;
+            while (store.count() > 0) {
+                var ids = new ArrayList<String>();
+                int bytes = 0;
+                try (var page = store.pendingBulk("history-account")) {
+                    assertTrue(page.getCount() <= HealthRecordStore.BULK_PAGE_SIZE);
+                    if (pages == 0) assertTrue(page.getCount() > HealthRecordStore.PAGE_SIZE);
+                    while (page.moveToNext()) {
+                        assertTrue(seen.add(page.getString(0)));
+                        ids.add(page.getString(0));
+                        bytes += page.getString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                    }
+                }
+                assertTrue(bytes <= HealthRecordStore.BULK_PAGE_BYTES);
+                assertEquals(ids.size(), store.acknowledgeBatch("history-account", ids.toArray(String[]::new),
+                        java.util.stream.IntStream.range(0, ids.size()).map(i -> 1).toArray()));
+                pages++;
+            }
+            assertEquals(1500, seen.size());
+            assertTrue(pages < 8);
+            assertEquals(1500, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
+        }
+    }
 }

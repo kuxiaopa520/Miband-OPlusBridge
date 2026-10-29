@@ -4,8 +4,8 @@
     "version": "6.7.17_a4b586b_260821",
     "sha256": "3bdecd3c3dd84fc1094f2cd6a02a575cbb06df00c764f4c5fe299d0394c1cb30",
     "hashMatches": true,
-    "classesChecked": 25,
-    "methodsChecked": 146,
+    "classesChecked": 26,
+    "methodsChecked": 147,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -15,6 +15,7 @@
       "com.heytap.databaseengine.option.DataReadOption": "classes12.dex",
       "com.heytap.device.data.storage.DataRepositoryHelper$Companion": "classes12.dex",
       "com.heytap.device.data.storage.DataRepositoryHelper": "classes12.dex",
+      "com.heytap.health.WirelessEntranceProvider": "classes12.dex",
       "com.heytap.health.base.base.GlobalApplicationHolder": "classes12.dex",
       "com.heytap.databaseengine.model.BreathRate": "classes12.dex",
       "com.heytap.databaseengine.model.HeartRate": "classes12.dex",
@@ -42,8 +43,8 @@
     "version": "3.59.1",
     "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
     "hashMatches": true,
-    "classesChecked": 13,
-    "methodsChecked": 27,
+    "classesChecked": 19,
+    "methodsChecked": 35,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -55,12 +56,19 @@
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase$Companion": "classes10.dex",
       "com.xiaomi.fit.fitness.persist.db.FitnessDatabase": "classes10.dex",
       "com.xiaomi.fit.fitness.persist.db.internal.SportReportEntity": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.export.WearableProductManager": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.WearableProductManagerImpl": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.bean.Product": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.export.WearableProductManager$Companion": "classes10.dex",
       "com.xiaomi.wearable.core.DeviceInfo": "classes3.dex",
       "com.xiaomi.wearable.core.WearApiResult": "classes3.dex",
       "com.xiaomi.wearable.wear.api.WearApiCall": "classes3.dex",
+      "com.mi.health.search.SettingSearchProvider": "classes8.dex",
       "com.xiaomi.fit.data.common.data.sport.SportBasicReport": "classes9.dex",
       "com.xiaomi.fit.device.extensions.DeviceModelExtKt": "classes9.dex"
     },
+    "fieldsChecked": 1,
     "passed": true
   }
 ]

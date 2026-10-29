@@ -37,6 +37,7 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
     private HealthReplay replay;
     private HealthRecordStore historyStore;
     private long lastHistoryNotice;
+    private long lastAutoRequest;
 
     @Override public boolean onCreate() {
         historyStore = new HealthRecordStore(getContext());
@@ -64,6 +65,15 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
                 if (!self) throw new SecurityException("HISTORY_SELF_REQUIRED");
                 return startHistory(binding, input != null && input.getBoolean("full", false));
             }
+            if ("historyAuto".equals(method)) {
+                long now = android.os.SystemClock.elapsedRealtime();
+                if (!LocalPrefs.open(getContext(), HISTORY_PREFS).getBoolean("active", false)
+                        && (lastAutoRequest == 0 || now - lastAutoRequest >= 60_000)) {
+                    lastAutoRequest = Math.max(1, now);
+                    return startHistory(binding, false);
+                }
+                return historyStatus();
+            }
             if ("historyJob".equals(method)) return historyJob(binding);
             if (replay == null && !"historyPage".equals(method) && !"historyError".equals(method)) {
                 replay = new HealthReplay(getContext(), code -> {
@@ -77,11 +87,21 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
                 Bundle target = status("MI_MIRROR_ACTIVE");
                 target.putString("did", binding.did());
                 target.putString("address", binding.address());
+                target.putString("model", binding.model());
+                target.putBoolean("imageNeeded", io.github.miam1ku.mibandoplusbridge.data.DeviceImageStore.uri(getContext()).isEmpty());
                 return target;
             }
             if (self) throw new SecurityException("MI_CALLER_REQUIRED");
             if (input == null || !binding.did().equals(input.getString("did"))) {
                 throw new SecurityException("MI_MIRROR_DEVICE_MISMATCH");
+            }
+            if ("productImage".equals(method)) {
+                String json = input.getString("product", "");
+                if (json.length() > 16 * 1024 || !binding.model().equals(new org.json.JSONObject(json).optString("model"))) {
+                    throw new SecurityException("MI_PRODUCT_IMAGE_DEVICE_MISMATCH");
+                }
+                io.github.miam1ku.mibandoplusbridge.data.DeviceImageStore.requestRefresh(getContext(), json);
+                return status("MI_PRODUCT_IMAGE_REQUESTED");
             }
             if ("historyPage".equals(method)) return importHistoryPage(binding, input);
             if ("historyError".equals(method)) {
@@ -177,6 +197,7 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
             SessionLog.line(getContext(), "MI_HISTORY_REQUESTED");
         }
         getContext().getContentResolver().notifyChange(HISTORY_REQUEST_URI, null);
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(getContext());
         return historyStatus();
     }
 
@@ -302,6 +323,7 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
             lastHistoryNotice = android.os.SystemClock.elapsedRealtime();
             getContext().getContentResolver().notifyChange(HealthQueueProvider.URI, null);
             getContext().getContentResolver().notifyChange(HealthQueueProvider.RECORDS_URI, null);
+            io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(getContext());
         }
         getContext().getContentResolver().notifyChange(HISTORY_URI, null);
         return historyStatus();

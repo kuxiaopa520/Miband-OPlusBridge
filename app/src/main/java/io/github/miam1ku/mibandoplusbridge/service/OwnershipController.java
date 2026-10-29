@@ -299,12 +299,25 @@ public final class OwnershipController {
         }
     }
 
+    public boolean wakeSyncHosts() {
+        String command = syncWakeCommand(context.getApplicationInfo().sourceDir);
+        if (command == null) return false;
+        try { execute(command, 25); return true; }
+        catch (Failure failed) { return false; }
+    }
+
+    static String syncWakeCommand(String apkPath) {
+        if (apkPath == null || !apkPath.matches("/data/app/[A-Za-z0-9._~=+/-]+/base\\.apk")
+                || apkPath.contains("..")) return null;
+        return "CLASSPATH=" + apkPath + " /system/bin/app_process /system/bin " + RootSyncWake.class.getName();
+    }
+
     /** Fixed class and packages. The APK path comes from PackageManager and is checked. */
     static String startupGrantCommand(String apkPath) {
         if (apkPath == null || !apkPath.matches("/data/app/[A-Za-z0-9._~=+/-]+/base\\.apk")
                 || apkPath.contains("..")) return null;
         return "CLASSPATH=" + apkPath + " /system/bin/app_process /system/bin "
-                + RootStartupGrant.class.getName() + " " + BRIDGE + " com.heytap.health";
+                + RootStartupGrant.class.getName() + " " + BRIDGE + " com.heytap.health com.mi.health";
     }
 
     /**

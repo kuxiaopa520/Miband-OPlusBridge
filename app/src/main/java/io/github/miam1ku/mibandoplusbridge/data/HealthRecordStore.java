@@ -18,6 +18,8 @@ import org.json.JSONObject;
 /** CE measurement history, revision ledger, bounded outbox and durable archive ownership. */
 public final class HealthRecordStore extends SQLiteOpenHelper {
     public static final int PAGE_SIZE = 200;
+    public static final int BULK_PAGE_SIZE = 1000;
+    public static final int BULK_PAGE_BYTES = 256 * 1024;
     private static final int MAX_RECORDS = 32768;
     private static final long MAX_BYTES = 64L * 1024 * 1024;
     private static final int MAX_RECORD_BYTES = 8192;
@@ -387,6 +389,23 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
                 + "ORDER BY rowid DESC LIMIT " + PAGE_SIZE, new String[]{hashAccount(account)});
     }
 
+    /** A bounded Binder page. Keep the legacy 200-row endpoint for older host hooks. */
+    public synchronized Cursor pendingBulk(String account) {
+        if (!authorizedAccount(account)) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
+        var result = new android.database.MatrixCursor(new String[]{"recordId", "revision", "record"});
+        int bytes = 0;
+        try (Cursor rows = getReadableDatabase().rawQuery("SELECT record_id, revision, payload, byte_size FROM records "
+                + "WHERE account_hash=? AND account_hash=(SELECT account_hash FROM binding WHERE id=1 AND paused=0) "
+                + "ORDER BY rowid DESC LIMIT " + BULK_PAGE_SIZE, new String[]{hashAccount(account)})) {
+            while (rows.moveToNext()) {
+                bytes += rows.getInt(3);
+                if (bytes > BULK_PAGE_BYTES) break;
+                result.addRow(new Object[]{rows.getString(0), rows.getInt(1), rows.getString(2)});
+            }
+        }
+        return result;
+    }
+
     public synchronized int acknowledge(String account, String recordId, int revision) {
         if (!authorizedAccount(account)) throw new SecurityException("HEALTH_ACCOUNT_NOT_CONFIRMED");
         if (recordId == null || recordId.isBlank() || recordId.length() > 256 || revision <= 0) {
@@ -408,7 +427,7 @@ public final class HealthRecordStore extends SQLiteOpenHelper {
 
     /** Receipts are accepted only for the current account and exactly the confirmed revisions. */
     public synchronized int acknowledgeBatch(String account, String[] ids, int[] revisions) {
-        if (ids == null || revisions == null || ids.length != revisions.length || ids.length > PAGE_SIZE) {
+        if (ids == null || revisions == null || ids.length != revisions.length || ids.length > BULK_PAGE_SIZE) {
             throw new IllegalArgumentException("INVALID_HEALTH_RECEIPT");
         }
         for (int i = 0; i < ids.length; i++) {

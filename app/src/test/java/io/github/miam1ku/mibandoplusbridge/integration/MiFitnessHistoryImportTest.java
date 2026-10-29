@@ -226,4 +226,18 @@ public final class MiFitnessHistoryImportTest {
             assertEquals(2, DatabaseUtils.queryNumEntries(store.getReadableDatabase(), "measurements"));
         }
     }
+
+    @Test public void miCanStartSilentHistoryWithoutTheModuleActivityAndRepeatedWakesKeepTheCursor() {
+        ShadowBinder.setCallingUid(12001);
+        assertTrue(provider.call("historyAuto", null, null).getBoolean("active"));
+        Bundle first = provider.call("historyJob", null, null);
+        provider.call("historyPage", null, sleepPage(first));
+        provider.call("historyAuto", null, null);
+        Bundle resumed = provider.call("historyJob", null, null);
+        assertEquals(first.getString("token"), resumed.getString("token"));
+        assertNotEquals(first.getString("table"), resumed.getString("table"));
+        assertThrows(SecurityException.class, () -> provider.call("historyStart", null, null));
+        ShadowBinder.setCallingUid(23000);
+        assertThrows(SecurityException.class, () -> provider.call("historyAuto", null, null));
+    }
 }

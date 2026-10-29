@@ -21,6 +21,7 @@ public final class BootReceiver extends BroadcastReceiver {
             try {
                 context.getContentResolver().notifyChange(
                         io.github.miam1ku.mibandoplusbridge.integration.DeviceCardProvider.URI, null);
+                CoexistSync.request(context);
                 OwnershipController owner = new OwnershipController(context);
                 BandStateRepository repository = new BandStateRepository(context);
                 if (repository.isRegistered() && owner.nativeReady()) {

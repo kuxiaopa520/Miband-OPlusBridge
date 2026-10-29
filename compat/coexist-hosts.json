@@ -7,6 +7,9 @@
     "version": "6.7.17_a4b586b_260821",
     "sha256": "3bdecd3c3dd84fc1094f2cd6a02a575cbb06df00c764f4c5fe299d0394c1cb30",
     "classes": {
+      "com.heytap.health.WirelessEntranceProvider": [
+        "call(Ljava/lang/String;Ljava/lang/String;Landroid/os/Bundle;)Landroid/os/Bundle;"
+      ],
       "com.oplus.drs.core.DrsCore": [
         "init(Landroid/content/Context;)V"
       ],
@@ -208,6 +211,19 @@
     "version": "3.59.1",
     "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
     "classes": {
+      "com.mi.health.search.SettingSearchProvider": [],
+      "com.xiaomi.fitness.device.manager.export.WearableProductManager": [],
+      "com.xiaomi.fitness.device.manager.export.WearableProductManager$Companion": [],
+      "com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt": [
+        "getInstance(Lcom/xiaomi/fitness/device/manager/export/WearableProductManager$Companion;)Lcom/xiaomi/fitness/device/manager/export/WearableProductManager;"
+      ],
+      "com.xiaomi.fitness.device.manager.WearableProductManagerImpl": [
+        "getProductByModel(Ljava/lang/String;)Lcom/xiaomi/fitness/device/manager/export/bean/WearableProduct;"
+      ],
+      "com.xiaomi.fitness.device.manager.bean.Product": [
+        "getModel()Ljava/lang/String;", "getBigPreview()Ljava/lang/String;", "getSkuBigPreview()Ljava/lang/String;",
+        "getSkuBigIcon()Ljava/lang/String;", "getBigIcon3()Ljava/lang/String;", "getBigIcon()Ljava/lang/String;"
+      ],
       "com.xiaomi.fit.fitness.device.mi.receive.FitnessReceiverHandler": [
         "handleDataInternal(Ljava/lang/String;I[B)Z"
       ],
@@ -253,6 +269,11 @@
       ],
       "androidx.sqlite.db.SupportSQLiteDatabase": [
         "getPath()Ljava/lang/String;"
+      ]
+    },
+    "fields": {
+      "com.xiaomi.fitness.device.manager.export.WearableProductManager": [
+        "Companion:Lcom/xiaomi/fitness/device/manager/export/WearableProductManager$Companion;"
       ]
     }
   }
