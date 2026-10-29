@@ -676,7 +676,13 @@ public final class OHealthDeviceHook {
                 if (snapshotAttempts == 0) HookRuntime.log("OHEALTH_DEVICE_SNAPSHOT_RETRY");
                 snapshotAttempts++;
                 worker.postDelayed(refresh[0], 2_000);
-            } else snapshotAttempts = 0;
+            } else {
+                snapshotAttempts = 0;
+                if (result == null || "COEXIST".equals(result.getString("connectionOwner", ""))) {
+                    worker.removeCallbacks(refresh[0]);
+                    worker.postDelayed(refresh[0], 30_000);
+                }
+            }
         };
         ContentObserver observer = new ContentObserver(worker) {
             @Override public void onChange(boolean selfChange) {

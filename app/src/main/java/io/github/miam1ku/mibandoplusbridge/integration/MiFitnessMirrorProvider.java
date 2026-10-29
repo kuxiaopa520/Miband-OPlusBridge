@@ -138,8 +138,10 @@ public final class MiFitnessMirrorProvider extends ContentProvider {
                     throw new SecurityException("MI_MIRROR_DEVICE_MISMATCH");
                 }
                 boolean connected = input.getBoolean("connected", false);
+                String source = input.getString("source", "mi-transport");
+                if (!java.util.Set.of("mi-model", "mi-event", "mi-transport").contains(source)) source = "mi-transport";
                 repository.recordCompanionState(binding.address(), connected, input.getString("firmware"),
-                        input.getInt("battery", -1), input.getInt("chargerState", 0));
+                        input.getInt("battery", -1), input.getInt("chargerState", 0), source);
                 if (!connected && parser != null) parser.reset();
                 return status("MI_MIRROR_STATE_SAVED");
             }

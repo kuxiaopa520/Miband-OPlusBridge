@@ -133,8 +133,11 @@ public final class MiFitnessMirrorHook {
         return did != null && !did.isBlank() && did.equals(selectedDid);
     }
 
-    private static boolean publishState(Context context, Object api, boolean connected, Bundle values) {
+    static boolean publishState(Context context, Object api, boolean connected, Bundle values) {
         try {
+            // A freshly created API/proxy can report false while Mi's actual device model
+            // is still connected. Confirm disconnections through the official manager.
+            if (!connected && values == null) return false;
             Object info = XposedHelpers.callMethod(api, "getDeviceInfo");
             String did = (String) XposedHelpers.callMethod(info, "getDid");
             if (!selected(context, did)) return false;
@@ -143,8 +146,10 @@ public final class MiFitnessMirrorHook {
             state.putString("address", (String) XposedHelpers.callMethod(info, "getAddress"));
             state.putString("firmware", (String) XposedHelpers.callMethod(info, "getFirmwareVersion"));
             state.putBoolean("connected", connected);
-            Bundle reply = context.getContentResolver().call(MiFitnessMirrorProvider.URI, "state", null, state);
-            return reply != null && "MI_MIRROR_STATE_SAVED".equals(reply.getString("status"));
+            state.putString("source", "mi-transport");
+            Bundle reply = context.getContentResolver().call(MiFitnessMirrorProvider.URI, connected ? "state" : "battery", null, state);
+            return reply != null && ("MI_MIRROR_STATE_SAVED".equals(reply.getString("status"))
+                    || "MI_MIRROR_BATTERY_SAVED".equals(reply.getString("status")));
         } catch (Throwable failure) {
             report("MI_MIRROR_STATE_SKIPPED " + failure.getClass().getSimpleName());
             return false;

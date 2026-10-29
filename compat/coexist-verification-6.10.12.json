@@ -85,8 +85,8 @@
     "version": "3.59.1",
     "sha256": "46100649d47000e8886d94cfbb34c18706e492a5d3aaa7f34cd4785841ffc254",
     "hashMatches": true,
-    "classesChecked": 25,
-    "methodsChecked": 46,
+    "classesChecked": 26,
+    "methodsChecked": 51,
     "missing": [],
     "runtimeVerified": false,
     "dexLocations": {
@@ -100,6 +100,7 @@
       "com.xiaomi.fit.fitness.persist.db.internal.SportReportEntity": "classes10.dex",
       "com.xiaomi.fitness.device.manager.DeviceBasicStatusDataHandler": "classes10.dex",
       "com.xiaomi.fitness.device.manager.DeviceModel": "classes10.dex",
+      "com.xiaomi.fitness.device.manager.OnDeviceStatusListenerAdapter": "classes10.dex",
       "com.xiaomi.fitness.device.manager.export.WearableDeviceManager": "classes10.dex",
       "com.xiaomi.fitness.device.manager.WearableDeviceManagerImpl": "classes10.dex",
       "com.xiaomi.fitness.device.manager.export.WearableProductManager": "classes10.dex",

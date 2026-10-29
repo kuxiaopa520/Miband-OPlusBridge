@@ -46,7 +46,10 @@ final class MiFitnessBatteryHook {
                 Object manager = XposedHelpers.callStaticMethod(Class.forName(
                         "com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt", false, loader), "getInstance", companion);
                 Object model = XposedHelpers.callMethod(manager, "getDeviceModel", target.getString("did"));
-                if (model != null) publish(context, XposedHelpers.callMethod(model, "getDeviceInfo"));
+                if (model != null) {
+                    MiFitnessConnectionHook.publishModel(context, model);
+                    publish(context, XposedHelpers.callMethod(model, "getDeviceInfo"));
+                }
                 long now = android.os.SystemClock.elapsedRealtime();
                 if (model != null && "com.mi.health".equals(android.app.Application.getProcessName())
                         && (lastRefreshAt == 0 || now - lastRefreshAt >= 60_000)) {

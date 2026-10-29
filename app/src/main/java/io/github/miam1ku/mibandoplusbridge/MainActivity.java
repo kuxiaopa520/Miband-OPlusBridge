@@ -328,6 +328,7 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void continueInit() {
+        io.github.miam1ku.mibandoplusbridge.service.CoexistSync.request(this);
         refreshOwnership();
         refreshDevice();
         refreshBonded();

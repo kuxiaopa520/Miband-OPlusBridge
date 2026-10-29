@@ -140,12 +140,23 @@ public final class BandStateRepository {
     /** Connection and optional battery reported by the selected device's official app. */
     public void recordCompanionState(String address, boolean connected, String firmware,
             int battery, int chargerState) {
+        recordCompanionState(address, connected, firmware, battery, chargerState, "mi-transport");
+    }
+
+    public void recordCompanionState(String address, boolean connected, String firmware,
+            int battery, int chargerState, String source) {
         if (!new OwnershipController(context).coexistReady()) return;
         synchronized (STATE_LOCK) {
             if (!isRegistered() || !MacIds.same(address(), address)) return;
             LocalPrefs state = state();
+            boolean changed = connected != state.getBoolean("connected", false)
+                    || battery >= 0 && battery <= 100 && battery != state.getInt("battery", -1)
+                    || chargerState >= 1 && chargerState <= 3 && (chargerState == 1) != state.getBoolean("charging", false)
+                    || firmware != null && !firmware.isBlank() && firmware.length() <= 128
+                        && !firmware.equals(state.getString("verifiedFirmware", ""));
             var editor = state.edit().putBoolean("connected", connected)
-                    .putLong("lastUpdateMs", System.currentTimeMillis())
+                    .putString("connectionSource", source).putLong("connectionAtMs", System.currentTimeMillis());
+            if (changed || !"mi-model".equals(source)) editor.putLong("lastUpdateMs", System.currentTimeMillis())
                     .putLong("revision", state.getLong("revision", 0) + 1);
             if (firmware != null && !firmware.isBlank() && firmware.length() <= 128) {
                 editor.putString("verifiedFirmware", firmware);
@@ -153,7 +164,7 @@ public final class BandStateRepository {
             if (battery >= 0 && battery <= 100) editor.putInt("battery", battery);
             if (chargerState >= 1 && chargerState <= 3) editor.putBoolean("charging", chargerState == 1);
             if (!editor.commit()) throw new IllegalStateException("BAND_STATE_STORAGE_FAILED");
-            context.getContentResolver().notifyChange(DeviceCardProvider.URI, null);
+            if (changed || !"mi-model".equals(source)) context.getContentResolver().notifyChange(DeviceCardProvider.URI, null);
         }
     }
 
@@ -233,6 +244,7 @@ public final class BandStateRepository {
     public void markSessionClosed() {
         synchronized (STATE_LOCK) {
             if (!isUnlocked()) return;
+            if (new OwnershipController(context).coexistReady()) return;
             LocalPrefs state = state();
             if (state.getString("deviceId", "").isBlank() || !state.getBoolean("connected", false)) return;
             if (!state.edit().putBoolean("connected", false)

@@ -80,6 +80,11 @@ public final class SessionLog {
         text.append("current-state mode=").append(owner.mode())
                 .append(" registered=").append(new BandStateRepository(context).isRegistered())
                 .append(" coexistReady=").append(owner.coexistReady()).append('\n');
+        LocalPrefs connection = LocalPrefs.open(context, "band-state");
+        text.append("connection connected=").append(connection.getBoolean("connected", false))
+                .append(" source=").append(connection.getString("connectionSource", "unknown"))
+                .append(" observedAtMs=").append(connection.getLong("connectionAtMs", 0))
+                .append(" battery=").append(connection.getInt("battery", -1)).append('\n');
         LocalPrefs history = LocalPrefs.open(context, "mi-history-import");
         text.append("history-import status=").append(history.getString("status", "MI_HISTORY_NOT_STARTED"))
                 .append(" active=").append(history.getBoolean("active", false))

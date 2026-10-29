@@ -214,7 +214,11 @@
       "com.mi.health.search.SettingSearchProvider": [],
       "com.xiaomi.fitness.device.manager.export.WearableDeviceManager": [],
       "com.xiaomi.fitness.device.manager.DeviceModel": [
-        "getDeviceInfo()Lcom/xiaomi/fitness/device/manager/bean/DeviceInfo;"
+        "getDeviceInfo()Lcom/xiaomi/fitness/device/manager/bean/DeviceInfo;",
+        "getDeviceStatus()I", "getDid()Ljava/lang/String;", "isDeviceConnected()Z"
+      ],
+      "com.xiaomi.fitness.device.manager.OnDeviceStatusListenerAdapter": [
+        "onConnectSuccess(Ljava/lang/String;)V", "onDisconnect(Ljava/lang/String;)V"
       ],
       "com.xiaomi.fitness.device.manager.WearableDeviceManagerImpl": [
         "getDeviceModel(Ljava/lang/String;)Lcom/xiaomi/fitness/device/manager/export/WearableDeviceModel;"
