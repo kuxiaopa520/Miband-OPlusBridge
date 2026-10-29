@@ -272,6 +272,7 @@ public final class EntryPoint extends XposedModule {
             } catch (Throwable unavailable) {
                 probe("OHEALTH610_IMPORT_HOOK_UNAVAILABLE " + unavailable.getClass().getSimpleName());
             }
+            HookRuntime.tryHook("OHEALTH610_HOME_RELOAD_HOOK_FAIL", () -> OHealthHomeMetricHook.install(context, loader));
             return;
         }
         try {

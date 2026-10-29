@@ -215,7 +215,7 @@ public final class MainActivity extends AppCompatActivity {
             if (new OwnershipController(this).nativeReady()) startActivity(new Intent(this, WeatherActivity.class));
             else launchMiHealth();
         });
-        screen.caption(links, "共存时在小米运动健康中同步；独占接管时可用「手环」磁贴连接。");
+        screen.caption(links, "「手环」磁贴在共存时查看 OPPO 健康设备面板，独占接管时连接手环。");
         LinearLayout historyCard = screen.card();
         historyImport = screen.outlined(historyCard, "一键同步到 OPPO 健康", this::startHistoryImport);
         screen.navRow(historyCard, "重新补齐全部历史", () -> startHistoryImport(true));
@@ -904,11 +904,11 @@ public final class MainActivity extends AppCompatActivity {
     private void showHistoryImport(Bundle result) {
         String code = result == null ? "" : result.getString("status", "");
         String text = switch (code) {
-            case "MI_HISTORY_NOT_STARTED" -> "点一次同步，自动打开两家 App 并补齐健康历史。";
+            case "MI_HISTORY_NOT_STARTED" -> "点一次同步，后台唤醒两家 App 并补齐健康历史。";
             case "MI_HISTORY_OPEN_OPPO", "MI_HISTORY_ACCOUNT_CHANGED" -> "先打开 OPPO 健康，登录并进入首页，再回来点补齐。";
             case "MI_HISTORY_REIMPORT_BINDING", "MI_HISTORY_SOURCE_ACCOUNT_CHANGED" -> "请先重新导入当前小米账号下的手环绑定，再继续补齐。";
-            case "MI_HISTORY_WAITING_MI" -> "已排队，请打开小米运动健康并保持运行。";
-            case "MI_HISTORY_RUNNING" -> "正在补读历史，保持两个健康 App 运行。";
+            case "MI_HISTORY_WAITING_MI" -> "已排队，正在后台唤醒小米运动健康。";
+            case "MI_HISTORY_RUNNING" -> "正在后台补读历史，可以退出模块界面。";
             case "MI_HISTORY_OPEN_OPPO_QUEUE_FULL" -> "正在等待 OPPO 写入，队列释放后会自动继续。";
             case "MI_HISTORY_LOCAL_COMPLETE" -> "小米本机历史已读取，正在核对 OPPO 写入进度。";
             case "MI_MIRROR_INACTIVE", "MI_HISTORY_DEVICE_CHANGED" -> "先保持共存开启并添加这只手环，再补齐。";

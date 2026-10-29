@@ -24,6 +24,7 @@ public final class OHealthHomeMetricHook {
     private static final WeakHashMap<Object, Boolean> CARDS = new WeakHashMap<>();
     private static Handler main;
     private static boolean reloadPosted;
+    private static boolean modern;
     private static final XC_MethodHook BIND = new XC_MethodHook() {
         @Override protected void afterHookedMethod(MethodHookParam param) {
             Object card = param.thisObject;
@@ -42,6 +43,24 @@ public final class OHealthHomeMetricHook {
 
     public static synchronized void install(Context supplied, ClassLoader loader) {
         if (supplied == null || !HOST.equals(supplied.getPackageName())) return;
+        modern = io.github.miam1ku.mibandoplusbridge.HostVersionNotice.is610(supplied);
+        if (modern) {
+            if (!HOST.equals(android.app.Application.getProcessName())) return;
+            try {
+                Class<?> base = Class.forName("fz.c", false, loader);
+                XposedBridge.hookMethod(base.getDeclaredMethod("k", Class.forName(
+                        "androidx.recyclerview.widget.RecyclerView$ViewHolder", false, loader), int.class, Context.class), BIND);
+                XposedBridge.hookMethod(base.getDeclaredMethod("q"), new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        synchronized (OHealthHomeMetricHook.class) { CARDS.remove(param.thisObject); }
+                    }
+                });
+                HookRuntime.log("OHEALTH610_HOME_RELOAD_HOOK_INSTALLED");
+            } catch (ReflectiveOperationException failure) {
+                HookRuntime.log("OHEALTH610_HOME_RELOAD_HOOK_FAIL");
+            }
+            return;
+        }
         Class<?> base;
         try {
             base = Class.forName(BASE, false, loader);
@@ -84,7 +103,7 @@ public final class OHealthHomeMetricHook {
             if (reloadPosted) return;
             if (main == null) main = HookRuntime.main();
             reloadPosted = true;
-            main.post(OHealthHomeMetricHook::reload);
+            main.postDelayed(OHealthHomeMetricHook::reload, modern ? 1_000 : 0);
         }
     }
 
@@ -98,6 +117,10 @@ public final class OHealthHomeMetricHook {
             if (card == null) continue;
             Class<?> type = card.getClass();
             try {
+                if (modern) {
+                    reload610(card);
+                    continue;
+                }
                 Method refresh = declaredVoid(type, "refresh");
                 if (refresh == null) refresh = declaredVoid(type, "refreshViewIfNeed");
                 if (refresh == null) {
@@ -111,6 +134,14 @@ public final class OHealthHomeMetricHook {
                 HookRuntime.log("OHEALTH_HOME_RELOAD_FAIL " + type.getName());
             }
         }
+    }
+
+    /** Re-query only a bound native card whose activity and view are still alive. */
+    static void reload610(Object card) throws ReflectiveOperationException {
+        if (!Boolean.TRUE.equals(card.getClass().getMethod("i").invoke(card))) return;
+        Object root = card.getClass().getField("r").get(card);
+        if (!(root instanceof android.view.View view) || !view.isAttachedToWindow()) return;
+        card.getClass().getMethod("o").invoke(card);
     }
 
     private static void hookBind(Class<?> type) {

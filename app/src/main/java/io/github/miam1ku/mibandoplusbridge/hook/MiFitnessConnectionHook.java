@@ -23,14 +23,7 @@ final class MiFitnessConnectionHook {
         Runnable probe = new Runnable() {
             @Override public void run() {
                 try {
-                    Bundle target = context.getContentResolver().call(MiFitnessMirrorProvider.URI, "target", null, null);
-                    if (target != null && "MI_MIRROR_ACTIVE".equals(target.getString("status"))) {
-                        Class<?> type = Class.forName("com.xiaomi.fitness.device.manager.export.WearableDeviceManager", false, loader);
-                        Object manager = callStaticMethod(Class.forName("com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt", false, loader),
-                                "getInstance", getStaticObjectField(type, "Companion"));
-                        Object model = callMethod(manager, "getDeviceModel", target.getString("did"));
-                        if (model != null) publishModel(context, model);
-                    }
+                    MiFitnessBatteryHook.requestSnapshot(context, loader);
                 } catch (Throwable failure) {
                     HookRuntime.log("MI_CONNECTION_RECONCILE_UNAVAILABLE " + failure.getClass().getSimpleName());
                 } finally {

@@ -42,4 +42,14 @@ public final class BandTileStateTest {
         assertEquals(BandTileState.Action.WAKE, BandTileState.click(true));
         assertEquals(BandTileState.Action.OPEN_APP, BandTileState.click(false));
     }
+
+    @Test public void coexistenceUsesTheOfficialConnectionWithoutANativeService() {
+        var connected = BandTileState.of(true, false, true, 80, true);
+        assertEquals(BandTileState.ACTIVE, connected.state());
+        assertEquals("已连接 · 80%", connected.subtitle());
+        var offline = BandTileState.of(true, true, false, 80, true);
+        assertEquals(BandTileState.INACTIVE, offline.state());
+        assertEquals("等待小米连接 · 点按查看", offline.subtitle());
+        assertEquals(BandTileState.UNAVAILABLE, BandTileState.of(false, false, true, 80, true).state());
+    }
 }

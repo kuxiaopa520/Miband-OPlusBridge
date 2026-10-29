@@ -30,7 +30,8 @@ public final class BandTileService extends TileService {
     @Override
     public void onStartListening() {
         super.onStartListening();
-        if (BandLiveService.mayWake(this)) BandLiveService.ensureProcess(this);
+        if (CoexistSync.enabled(this)) CoexistSync.request(this);
+        else if (BandLiveService.mayWake(this)) BandLiveService.ensureProcess(this);
         if (observer == null) {
             observer = new ContentObserver(new Handler(Looper.getMainLooper())) {
                 @Override public void onChange(boolean selfChange) { render(); }
@@ -69,7 +70,9 @@ public final class BandTileService extends TileService {
         boolean connected = false;
         int battery = -1;
         String model = "";
+        boolean coexist = false;
         try {
+            coexist = new OwnershipController(this).coexistReady();
             registered = new BandStateRepository(this).isRegistered();
             if (registered) {
                 LocalPrefs state = LocalPrefs.open(this, "band-state");
@@ -81,7 +84,7 @@ public final class BandTileService extends TileService {
             registered = false;
         }
         BandTileState.View view = BandTileState.of(
-                registered, BandLiveService.isRunning(), connected, battery);
+                registered, BandLiveService.isRunning(), connected, battery, coexist);
         boolean watch = BandCatalog.watchForm(model);
         if (glyph == null || glyphWatch != watch) {
             glyph = tileGlyph(watch);

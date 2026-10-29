@@ -38,7 +38,16 @@ public class MiFitnessBatteryHookTest {
         final Battery battery = new Battery();
         public String getDid() { return did; }
         public String getMac() { return mac; }
-        public Battery getBatteryInfo() { return battery; }
+        boolean failBattery;
+        public Battery getBatteryInfo() { if (failBattery) throw new IllegalStateException("NOT_READY"); return battery; }
+    }
+    public static final class Model {
+        final Device device = new Device();
+        boolean failConnection;
+        public String getDid() { return device.did; }
+        public Device getDeviceInfo() { return device; }
+        public int getDeviceStatus() { if (failConnection) throw new IllegalStateException("NOT_READY"); return 3; }
+        public boolean isDeviceConnected() { return true; }
     }
 
     @Before public void setup() throws Exception {
@@ -82,5 +91,26 @@ public class MiFitnessBatteryHookTest {
         device.battery.level = 80; device.mac = "11:12:13:14:15:16";
         MiFitnessBatteryHook.publish(context, device);
         assertEquals(85, LocalPrefs.open(context, "band-state").getInt("battery", -1));
+    }
+
+    @Test public void repeatedModelSnapshotsRecoverConnectionAndBatteryWithoutANewSetterEvent() {
+        Model model = new Model();
+        MiFitnessBatteryHook.publishSnapshot(context, model);
+        assertTrue(LocalPrefs.open(context, "band-state").getBoolean("connected", false));
+        assertEquals(80, LocalPrefs.open(context, "band-state").getInt("battery", -1));
+        model.device.battery.level = 79;
+        MiFitnessBatteryHook.publishSnapshot(context, model);
+        assertEquals(79, LocalPrefs.open(context, "band-state").getInt("battery", -1));
+    }
+
+    @Test public void connectionAndBatteryReadFailuresDoNotSuppressEachOther() {
+        Model model = new Model(); model.failConnection = true;
+        MiFitnessBatteryHook.publishSnapshot(context, model);
+        assertFalse(LocalPrefs.open(context, "band-state").getBoolean("connected", true));
+        assertEquals(80, LocalPrefs.open(context, "band-state").getInt("battery", -1));
+        model.failConnection = false; model.device.failBattery = true;
+        MiFitnessBatteryHook.publishSnapshot(context, model);
+        assertTrue(LocalPrefs.open(context, "band-state").getBoolean("connected", false));
+        assertEquals(80, LocalPrefs.open(context, "band-state").getInt("battery", -1));
     }
 }

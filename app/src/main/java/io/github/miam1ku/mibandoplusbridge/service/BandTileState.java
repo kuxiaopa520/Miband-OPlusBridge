@@ -12,6 +12,15 @@ public final class BandTileState {
     private BandTileState() {}
 
     static View of(boolean registered, boolean serviceUp, boolean connected, int battery) {
+        return of(registered, serviceUp, connected, battery, false);
+    }
+
+    static View of(boolean registered, boolean serviceUp, boolean connected, int battery, boolean coexist) {
+        if (registered && coexist) {
+            return new View(connected ? ACTIVE : INACTIVE, connected
+                    ? io.github.miam1ku.mibandoplusbridge.ui.Copy.tileSubtitle(true, true, true, battery)
+                    : "等待小米连接 · 点按查看");
+        }
         String subtitle = io.github.miam1ku.mibandoplusbridge.ui.Copy.tileSubtitle(registered, serviceUp, connected, battery);
         if (!registered) return new View(UNAVAILABLE, subtitle);
         if (serviceUp && connected) return new View(ACTIVE, subtitle);

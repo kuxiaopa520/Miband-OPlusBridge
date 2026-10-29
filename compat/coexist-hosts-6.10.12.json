@@ -12,6 +12,10 @@
       "com.heytap.health.network.core.AutoDisposeObserver"
     ],
     "classes": {
+      "fz.c": [
+        "k(Landroidx/recyclerview/widget/RecyclerView$ViewHolder;ILandroid/content/Context;)V",
+        "i()Z", "o()V", "q()V"
+      ],
       "com.heytap.health.linkage.ui.DeviceImageView": [
         "f(ILjava/lang/String;Ljava/lang/String;)V", "g(Ljava/lang/String;Ljava/lang/String;)V"
       ],
@@ -127,6 +131,7 @@
       ]
     },
     "fields": {
+      "fz.c": ["r:Landroid/view/View;"],
       "com.heytap.health.linkage.ui.DeviceImageView": [
         "j:Landroid/widget/ImageView;", "k:Lcom/oplusos/vfxmodelviewer/view/ModelViewer;", "l:Lcom/oplusos/vfxmodelviewer/view/ModelScene;"
       ],

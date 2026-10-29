@@ -46,12 +46,10 @@ final class MiFitnessBatteryHook {
                 Object manager = XposedHelpers.callStaticMethod(Class.forName(
                         "com.xiaomi.fitness.device.manager.export.DeviceManagerExtKt", false, loader), "getInstance", companion);
                 Object model = XposedHelpers.callMethod(manager, "getDeviceModel", target.getString("did"));
-                if (model != null) {
-                    MiFitnessConnectionHook.publishModel(context, model);
-                    publish(context, XposedHelpers.callMethod(model, "getDeviceInfo"));
-                }
+                if (model != null) publishSnapshot(context, model);
                 long now = android.os.SystemClock.elapsedRealtime();
                 if (model != null && "com.mi.health".equals(android.app.Application.getProcessName())
+                        && Boolean.TRUE.equals(XposedHelpers.callMethod(model, "isDeviceConnected"))
                         && (lastRefreshAt == 0 || now - lastRefreshAt >= 60_000)) {
                     lastRefreshAt = Math.max(1, now);
                     Class<?> status = Class.forName("com.xiaomi.fitness.device.manager.DeviceBasicStatusDataHandler", false, loader);
@@ -62,6 +60,14 @@ final class MiFitnessBatteryHook {
             } catch (Throwable failure) { HookRuntime.log("MI_BATTERY_CACHE_UNAVAILABLE " + failure.getClass().getSimpleName()); }
             finally { POLLING.set(false); }
         });
+    }
+
+    /** Connection and battery can initialize independently; a failed read must not suppress the other. */
+    static void publishSnapshot(Context context, Object model) {
+        try { MiFitnessConnectionHook.publishModel(context, model); }
+        catch (Throwable failure) { HookRuntime.log("MI_CONNECTION_RECONCILE_UNAVAILABLE " + failure.getClass().getSimpleName()); }
+        try { publish(context, XposedHelpers.callMethod(model, "getDeviceInfo")); }
+        catch (Throwable failure) { HookRuntime.log("MI_BATTERY_CACHE_UNAVAILABLE " + failure.getClass().getSimpleName()); }
     }
 
     static void publish(Context context, Object info) {
